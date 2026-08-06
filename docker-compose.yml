@@ -3,6 +3,7 @@
 #   docker compose up -d
 #   open http://localhost:4444   (VS Code web)
 #   open http://localhost:7681   (web terminal)
+#   open http://localhost:8080   (web portal dashboard)
 #   curl  http://localhost:7682/health   (control plane)
 
 services:
@@ -17,6 +18,7 @@ services:
       - "7681:7681"   # ttyd terminal
       - "7682:7682"   # log-proxy control plane
       - "9876:9876"   # bridge API (localhost-only by default)
+      - "8080:8080"   # web portal dashboard
     volumes:
       - ./workspace:/workspace            # your code lives here
       - nexos-state:/opt/nexos/state      # logs, pidfiles, editor config
@@ -27,6 +29,10 @@ services:
       - NEXOS_TERMINAL_PORT=7681
       - NEXOS_LOG_PROXY_PORT=7682
       - NEXOS_BRIDGE_PORT=9876
+      - NEXOS_WEB_PORT=8080
+      # Auth for the web portal. Loopback is always trusted; set a token to
+      # gate non-loopback dashboard requests (login screen / bearer header):
+      # - NEXOS_WEB_TOKEN=changeme
       # Control-plane reachability. Default (loopback-only) means the ports
       # published above serve nothing: docker-proxy arrives from a non-loopback
       # address and the log-proxy answers 403 / the bridge stays on 127.0.0.1.

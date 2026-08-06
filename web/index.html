@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NexOS</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --fg: #e6edf3;
+    --dim: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    background: var(--panel); position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { font-size: 15px; margin: 0; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); display: inline-block; }
+  .dot.up { background: var(--green); }
+  .dot.down { background: var(--red); }
+  .spacer { flex: 1; }
+  button, input {
+    background: var(--panel); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 10px; font: inherit; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #1f6feb; border-color: #1f6feb; }
+  input { cursor: text; }
+  main { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; padding: 16px; }
+  section {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; overflow: hidden;
+  }
+  section h2 {
+    margin: 0 0 10px; font-size: 12px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--dim);
+    display: flex; align-items: center; gap: 8px;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { padding: 4px 6px; border-bottom: 1px solid var(--border); text-align: left; }
+  th { color: var(--dim); font-weight: normal; }
+  .dim { color: var(--dim); }
+  .ok { color: var(--green); }
+  .warn { color: var(--yellow); }
+  .err { color: var(--red); }
+  #logbox {
+    background: #010409; border: 1px solid var(--border); border-radius: 6px;
+    height: 280px; overflow-y: auto; padding: 8px; white-space: pre-wrap;
+    word-break: break-all; font-size: 12px;
+  }
+  #execin { width: 100%; padding: 8px; margin-bottom: 8px; }
+  #execout {
+    background: #010409; border: 1px solid var(--border); border-radius: 6px;
+    height: 200px; overflow-y: auto; padding: 8px; white-space: pre-wrap;
+    word-break: break-all; font-size: 12px;
+  }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row .spacer { flex: 1; }
+  .metric { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; }
+  .metric b { text-align: right; }
+  #login-overlay {
+    position: fixed; inset: 0; background: rgba(13,17,23,0.92);
+    display: flex; align-items: center; justify-content: center; z-index: 100;
+  }
+  #login-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 24px; width: 320px; text-align: center;
+  }
+  #login-card input { width: 100%; margin: 12px 0; }
+  .hidden { display: none !important; }
+  #settingsform label { display: block; margin-bottom: 8px; }
+  #settingsform input[type=number] { width: 80px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>NexOS</h1>
+  <span id="healthdot" class="dot"></span>
+  <span class="dim" id="uptime"></span>
+  <span class="spacer"></span>
+  <span id="authbadge" class="dim hidden">auth</span>
+  <button id="refreshbtn">refresh</button>
+  <button id="logoutbtn" class="hidden">logout</button>
+</header>
+
+<main>
+  <section id="status">
+    <h2>Services</h2>
+    <table id="servicetable">
+      <thead><tr><th>name</th><th>state</th><th>pid</th><th>child</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="row" style="margin-top:10px">
+      <span class="dim">log-proxy</span><span id="dep-logProxy" class="dim">?</span>
+      <span class="dim">bridge</span><span id="dep-bridge" class="dim">?</span>
+      <span class="dim">git-sign</span><span id="dep-gitSign" class="dim">?</span>
+    </div>
+  </section>
+
+  <section id="metrics">
+    <h2>Metrics</h2>
+    <div class="metric" id="metricsbody">loading…</div>
+  </section>
+
+  <section id="git-sign" style="grid-column: span 1">
+    <h2>Git signing</h2>
+    <div id="gitsignbody" class="dim">loading…</div>
+  </section>
+
+  <section id="logs">
+    <h2>Logs <span class="row" style="display:inline-flex">
+      <span class="spacer"></span>
+      <span class="dim">auto</span>
+      <input type="checkbox" id="autolog" checked>
+    </span></h2>
+    <div id="logbox"></div>
+  </section>
+
+  <section id="exec">
+    <h2>Execute</h2>
+    <input id="execin" placeholder="command (e.g. ls -la)">
+    <div id="execout"></div>
+  </section>
+
+  <section id="settings">
+    <h2>Settings</h2>
+    <form id="settingsform">
+      <label>Log auto-refresh interval (s) <input type="number" id="set-interval" min="1" max="60" value="3"></label>
+      <button type="submit">save</button>
+    </form>
+  </section>
+</main>
+
+<div id="login-overlay" class="hidden">
+  <div id="login-card">
+    <h2>NexOS</h2>
+    <p class="dim">Authentication required</p>
+    <input type="password" id="tokeninput" placeholder="token" autocomplete="current-password">
+    <button class="primary" id="loginbtn">login</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+let authRequired = false;
+let pollTimer = null;
+let refreshInterval = 3;
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  if (res.status === 401) {
+    showLogin();
+    throw new Error('unauthorized');
+  }
+  return res;
+}
+
+function showLogin() { authRequired = true; $('login-overlay').classList.remove('hidden'); }
+function hideLogin() { authRequired = false; $('login-overlay').classList.add('hidden'); }
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function loadHealth() {
+  try {
+    const r = await api('/health');
+    const h = await r.json();
+    $('healthdot').className = 'dot up';
+    $('uptime').textContent = 'up ' + h.uptimeSeconds + 's';
+    for (const dep of ['logProxy', 'bridge', 'gitSign']) {
+      const el = $('dep-' + dep);
+      el.textContent = h.dependencies[dep];
+      el.className = h.dependencies[dep] === 'up' ? 'ok' : 'err';
+    }
+    $('authbadge').classList.toggle('hidden', !h.auth);
+  } catch {}
+}
+
+async function loadStatus() {
+  try {
+    const r = await api('/api/v1/status');
+    const s = await r.json();
+    const rows = (s.supervisor || []).map((sv) =>
+      '<tr><td>' + esc(sv.name) + '</td><td class="' + (sv.state === 'running' ? 'ok' : 'err') + '">'
+      + esc(sv.state) + '</td><td>' + (sv.pid ?? '-') + '</td><td>' + (sv.childPid ?? '-') + '</td></tr>');
+    $('servicetable').querySelector('tbody').innerHTML = rows.join('') || '<tr><td colspan=4 class=dim>no supervised services</td></tr>';
+  } catch {}
+}
+
+async function loadMetrics() {
+  try {
+    const r = await api('/api/v1/metrics');
+    const { metrics: m } = await r.json();
+    $('metricsbody').innerHTML =
+      'memory <b>' + m.memUsedMB + ' / ' + m.memTotalMB + ' MB (' + m.memUsedPercent + '%)</b>' +
+      '<span>cpu</span><b>' + m.cpuUsagePercent + '%</b>' +
+      '<span>load</span><b>' + m.loadAvg1m + ' / ' + m.loadAvg5m + ' / ' + m.loadAvg15m + '</b>' +
+      '<span>disk</span><b>' + m.diskUsedMB + ' / ' + m.diskTotalMB + ' MB (' + m.diskUsedPercent + '%)</b>' +
+      '<span>host</span><b>' + esc(m.hostname) + '</b>';
+  } catch {}
+}
+
+async function loadGitSign() {
+  try {
+    const r = await api('/api/v1/git-sign');
+    const g = await r.json();
+    $('gitsignbody').innerHTML = g.reachable
+      ? 'status <b class="ok">up</b><br>pubkey: <code>' + esc(g.pubkey || '(none)') + '</code>'
+      : '<span class="warn">not running (configure NEXOS_GIT_SIGN_KEY and start git-sign)</span>';
+  } catch {}
+}
+
+async function loadLogs() {
+  try {
+    const r = await api('/api/v1/logs');
+    const j = await r.json();
+    const lines = (j.logs || []).map((l) =>
+      '<span class="dim">' + esc(new Date(l.timestamp).toLocaleTimeString()) + '</span> '
+      + '[' + esc(l.stream) + '] ' + esc(l.message));
+    const box = $('logbox');
+    box.innerHTML = lines.join('\n') || '<span class="dim">no logs</span>';
+    box.scrollTop = box.scrollHeight;
+  } catch {}
+}
+
+async function runExec() {
+  const cmd = $('execin').value.trim();
+  if (!cmd) return;
+  const out = $('execout');
+  out.innerHTML = '<span class="dim">$ ' + esc(cmd) + '</span>\n';
+  try {
+    const r = await api('/api/v1/exec', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cmd, wait: true }),
+    });
+    const j = await r.json();
+    if (j.error) {
+      out.innerHTML += '<span class="err">' + esc(j.error) + '</span>\n';
+    } else {
+      out.innerHTML += '<span class="' + (j.exitCode === 0 ? 'ok' : 'err') + '">exit ' + (j.exitCode ?? '?') + ' (pid ' + (j.pid ?? '-') + ')</span>\n';
+    }
+  } catch (e) {
+    out.innerHTML += '<span class="err">' + esc(e.message) + '</span>\n';
+  }
+}
+
+async function loadSettings() {
+  try {
+    const r = await api('/api/v1/settings');
+    const j = await r.json();
+    if (j.settings && j.settings.logInterval) {
+      refreshInterval = j.settings.logInterval;
+      $('set-interval').value = refreshInterval;
+    }
+  } catch {}
+}
+
+async function saveSettings() {
+  refreshInterval = parseInt($('set-interval').value, 10) || 3;
+  const r = await api('/api/v1/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ settings: { logInterval: refreshInterval } }),
+  });
+  if (r.ok) schedulePoll();
+}
+
+function schedulePoll() {
+  clearInterval(pollTimer);
+  if ($('autolog').checked) {
+    pollTimer = setInterval(() => loadLogs(), refreshInterval * 1000);
+  }
+}
+
+$('refreshbtn').addEventListener('click', () => { loadHealth(); loadStatus(); loadMetrics(); loadGitSign(); loadLogs(); });
+$('autolog').addEventListener('change', schedulePoll);
+$('execin').addEventListener('keydown', (e) => { if (e.key === 'Enter') runExec(); });
+$('settingsform').addEventListener('submit', (e) => { e.preventDefault(); saveSettings(); });
+$('loginbtn').addEventListener('click', async () => {
+  const token = $('tokeninput').value;
+  const r = await api('/api/v1/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+  if (r.ok) { hideLogin(); loadHealth(); loadStatus(); loadMetrics(); loadGitSign(); loadLogs(); }
+});
+$('logoutbtn').addEventListener('click', async () => {
+  await api('/api/v1/logout', { method: 'POST' });
+  showLogin();
+});
+
+(async function init() {
+  hideLogin();
+  await loadHealth();
+  if (authRequired) return;
+  await Promise.all([loadStatus(), loadMetrics(), loadGitSign(), loadLogs(), loadSettings()]);
+  schedulePoll();
+})();
+</script>
+</body>
+</html>

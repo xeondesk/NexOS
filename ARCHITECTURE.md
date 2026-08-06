@@ -25,8 +25,10 @@ and logs survive from the pre-boot snapshot but the supervisor never resumed the
 Same component set, parameterized via `NEXOS_*` (defaults mirror v0 ports exactly:
 4444/7681/7682/9876), plus: container packaging (node:22-bookworm, uid 2000,
 HEALTHCHECK, multi-arch), `bin/nexos` CLI, `bin/entrypoint.sh` with graceful
-shutdown, and the bridge as a **supervised standalone** service. Node components
-read configuration from the environment only (never the shell `.conf`).
+shutdown, the bridge as a **supervised standalone** service, and a **web portal**
+(`web/`, `NEXOS_WEB_PORT` 8080) that aggregates the whole control plane behind one
+dashboard. Node components read configuration from the environment only (never
+the shell `.conf`).
 
 ## 3. Parity map (live → NexOS)
 
@@ -40,6 +42,7 @@ read configuration from the environment only (never the shell `.conf`).
 | Bridge | inside extension host (mutates editor live) | bridge/standalone.js, filesystem handlers | Behavioral downgrade (see A4) |
 | Runtime hooks | register.mjs / config-loader.mjs | lib/register.mjs / config-loader.mjs + `NEXOS_ALLOWED_DEV_HOSTS` | Parity, hosts renamed |
 | Git identity | gh helper + ssh-sign | git/credential-helper + ssh-sign + allowed-signers | Parity, no gh wiring example |
+| Web portal | none (raw port-per-service UI) | web/api-server.js + index.html (one port, auth, status/logs/exec/metrics/git-sign/settings) | New capability |
 
 ## 4. Gap detection
 
@@ -102,5 +105,12 @@ host bootstrap.
    the same key/data/namespace; `tests/verify-sshsig.mjs` independently verifies
    them (a faithful reimplementation of `ssh-keygen -Y verify`), and
    `tests/sign-server-smoke.sh` covers the service, client, namespace binding and
-   token gate. `NEXOS_GIT_SIGN_URL` now points at the owned endpoint by default.
-   Closed the "self-hosted signing service" future-work item.
+    token gate. `NEXOS_GIT_SIGN_URL` now points at the owned endpoint by default.
+    Closed the "self-hosted signing service" future-work item.
+8. Web portal — `web/api-server.js` (dependency-free `node:http`) + `web/index.html`
+   (no-build dashboard) expose the whole control plane on one port with auth
+   (loopback-trusted; `NEXOS_WEB_TOKEN` bearer or HMAC session cookie for remote),
+   supervised-service status, proxied logs/exec, /proc metrics, git-sign
+   reachability + pubkey, and persisted settings. Supervised as the `web` service,
+   started by the entrypoint, covered by `tests/web-smoke.sh` (21 checks) and the
+   Docker runtime validation.

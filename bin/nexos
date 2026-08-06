@@ -11,7 +11,7 @@
 #   nexos exec <cmd...>        run a command through the log-proxy control plane
 #   nexos version              print the NexOS version
 #
-# Built-in services: editor, terminal, log-proxy, metrics, bridge, git-sign.
+# Built-in services: editor, terminal, log-proxy, metrics, bridge, git-sign, web.
 # Custom services: nexos start <name> -- <command...>
 
 set -u
@@ -32,6 +32,7 @@ service_cmd() {
     metrics) echo "bash $NEXOS_ROOT/lib/metrics.sh" ;;
     bridge) echo "bash -c 'cd $NEXOS_ROOT && node bridge/standalone.js'" ;;
     git-sign) echo "bash -c 'cd $NEXOS_ROOT && node git/sign-server.js'" ;;
+    web) echo "bash -c 'cd $NEXOS_ROOT && node web/api-server.js'" ;;
     *) echo "" ;;
   esac
 }

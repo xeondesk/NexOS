@@ -32,8 +32,11 @@ nexos/
 │   ├── sign-keygen.js    git-sign keypair generator (nexos sign-keygen)
 │   ├── allowed-signers   trusted signing keys
 │   └── credential-helper git credential fill helper
+├── web/
+│   ├── api-server.js     web portal API server (auth, status, logs, exec, metrics)
+│   └── index.html        dependency-free dark dashboard (consumes /api/v1)
 ├── state/                runtime: logs/, run/ (pidfiles + locks)
-└── tests/                supervisor / log-proxy / metrics / git-sign smoke tests
+└── tests/                supervisor / log-proxy / metrics / git-sign / web smoke tests
 ```
 
 ## Quick start
@@ -45,6 +48,7 @@ nexos start terminal       # web terminal on NEXOS_TERMINAL_PORT (7681)
 nexos start editor         # VS Code web on NEXOS_EDITOR_PORT (4444)
 nexos start metrics        # metrics daemon
 nexos start bridge         # control API for editor hosts (NEXOS_BRIDGE_PORT, 9876)
+nexos start web            # full-platform web portal on NEXOS_WEB_PORT (8080)
 nexos sign-keygen          # git-sign keypair (state/sign/sign-key.{pem,pub})
 nexos start git-sign       # self-hosted SSH signing service (NEXOS_GIT_SIGN_PORT, 9877)
 nexos status
@@ -85,6 +89,33 @@ Loopback requests stay token-free and remain trusted. Remote clients without a
 valid token get `401`, and (for the log-proxy) are treated as non-admin — they
 cannot see `adminOnly` log lines, which also means a token-authed client is
 required to read those lines remotely.
+
+## Web portal
+
+`nexos start web` runs a dependency-free web dashboard (`web/api-server.js`,
+plain `node:http`) that aggregates the whole control plane behind one port:
+
+| Route | Method | Purpose |
+|---|---|---|
+| `/` | GET | dashboard (`web/index.html`) |
+| `/health` | GET | liveness + auth flag + log-proxy/bridge/git-sign dependency state |
+| `/api/v1/status` | GET | supervised service states (pidfile scan + `ps` match) |
+| `/api/v1/logs` | GET | log-proxy history (proxied) |
+| `/api/v1/exec` | POST | run `{cmd,args,...}` through the log-proxy (120s timeout) |
+| `/api/v1/metrics` | GET | `/proc` memory/CPU/load + `df` usage |
+| `/api/v1/git-sign` | GET | git-sign service reachability + public key |
+| `/api/v1/bridge` | GET | bridge status |
+| `/api/v1/settings` | GET/PUT | persisted settings (`NEXOS_WEB_STATE_FILE`, atomic write + debounce) |
+| `/api/v1/login` | POST | exchange token for session cookie |
+| `/api/v1/logout` | POST | clear session cookie |
+
+Loopback traffic is always trusted; remote clients must send
+`Authorization: Bearer $NEXOS_WEB_TOKEN` or a `nexos_session` cookie (HMAC-
+SHA256 over the expiry, 12h TTL, HttpOnly/SameSite=Lax). Set
+`NEXOS_WEB_TOKEN` to enable auth — unset, the portal is open (loopback-only by
+default via `NEXOS_WEB_HOST=127.0.0.1`; serve `0.0.0.0` with
+`NEXOS_ALLOW_REMOTE=true`). The dashboard (`web/index.html`) has no build
+step or framework dependency and is served by the API server itself.
 
 ## Configuration
 
@@ -139,7 +170,7 @@ NexOS ships three git helpers under `git/`; wire them per your provider:
 ## Tests
 
 ```sh
-npm test   # supervisor + log-proxy + metrics + bridge + extension + git-sign smoke tests
+npm test   # supervisor + log-proxy + metrics + bridge + extension + git-sign + web smoke tests
 ```
 
 ## Docker
@@ -153,6 +184,7 @@ are supported via the `TARGETARCH` build arg.
 ```sh
 docker compose up -d
 # open http://localhost:4444 (VS Code web) and http://localhost:7681 (terminal)
+# or the aggregated dashboard at http://localhost:8080 (web portal)
 
 # or manually:
 docker build -t nexos .
@@ -163,11 +195,11 @@ docker run --rm -p 4444:4444 -p 7681:7681 -p 7682:7682 \
 - `/workspace` is the mounted code directory; `nexos-state` volume persists
   logs, pidfiles, and editor config.
 - Ports: `4444` editor, `7681` terminal, `7682` log-proxy, `9876` bridge API
-  (localhost-only by default).
+  (localhost-only by default), `8080` web portal (`NEXOS_WEB_PORT`).
 - Service gating via `NEXOS_ENABLE_*` (`log-proxy`, `editor`, `terminal`,
-  `metrics`, `bridge`). Editor/terminal auto-skip if the binary is absent;
-  metrics auto-skip until a callback URL is configured (`NEXOS_CALLBACK_URL` or a
-  mounted `config/nexos.env`).
+  `metrics`, `bridge`, `web`). Editor/terminal auto-skip if the binary is
+  absent; metrics auto-skip until a callback URL is configured
+  (`NEXOS_CALLBACK_URL` or a mounted `config/nexos.env`).
 - The entrypoint (`bin/entrypoint.sh`) starts all services, traps
   `SIGTERM`/`SIGINT`, and shuts every supervised service down cleanly.
 - `HEALTHCHECK` polls `:7682/health`.

@@ -17,12 +17,13 @@ is explicitly out of scope for migration.
 - `lib/` — supervisor.sh, log-proxy.js, metrics.sh, register.mjs, config-loader.mjs
 - `services/` — editor.sh (code-server), terminal.sh (ttyd)
 - `bridge/bridge-api.js` — standalone control API for editor hosts
+- `web/` — api-server.js (portal API) + index.html (no-build dashboard)
 - `git/` — ssh-sign.sh, sign-server.js, sign-keygen.js, allowed-signers, credential-helper
 - `tests/` — smoke tests; `workspace/` — mounted code dir
 
 ## Commands
 
-- Tests: `npm test` (supervisor + log-proxy + metrics + bridge + editor-extension + vsix packaging + git-sign smoke tests)
+- Tests: `npm test` (supervisor + log-proxy + metrics + bridge + editor-extension + vsix packaging + git-sign + web smoke tests)
 - VSIX: `bash bridge/editor-extension/build-vsix.sh` (vendors `bridge-api.js`,
   strips the source-tree fallback require, emits `nexos-bridge-<ver>.vsix`)
 - CLI smoke: `bin/nexos status`, `bin/nexos exec "node -v"`
@@ -102,6 +103,17 @@ install the compose file / README port mapping applies as written.
   Token gate: non-loopback requests need `Authorization: Bearer $NEXOS_GIT_SIGN_TOKEN`;
   loopback always trusted. `NEXOS_GIT_SIGN_ALLOW_REMOTE`/`NEXOS_ALLOW_REMOTE=true`
   binds 0.0.0.0. The entrypoint skips git-sign unless a key is configured.
+- **Web portal**: `web/api-server.js` is a plain `node:http` server (no deps, no
+  build step) supervised as the `web` service (`NEXOS_WEB_PORT`, 8080;
+  `NEXOS_WEB_HOST` defaults to 127.0.0.1, `0.0.0.0` when `NEXOS_ALLOW_REMOTE=true`).
+  `/api/v1/login` + `/api/v1/logout` MUST stay registered BEFORE the auth gate in
+  the router (they return 401 otherwise). Loopback is always trusted; remote needs
+  `Authorization: Bearer $NEXOS_WEB_TOKEN` or a `nexos_session` cookie (HMAC-SHA256
+  over expiry, base64url, 12h TTL). Settings persist atomically (tmp + rename) to
+  `NEXOS_WEB_STATE_FILE` with a 40ms write debounce and a flush on SIGINT/SIGTERM.
+  `/api/v1/exec` + `/api/v1/logs` proxy the log-proxy loopback; exec uses a 120s
+  timeout. When testing with curl, `Content-Type` equality checks must account for
+  `charset` (e.g. `text/html; charset=utf-8`).
 
 ## Verification flow
 
@@ -110,3 +122,7 @@ install the compose file / README port mapping applies as written.
    `docker logs` for the "NexOS ready" banner, curl each service, test
    `/execute` + `/history`, then `docker stop` and confirm the entrypoint
    "shutting down services..." path with no leaked supervisors on the host.
+   `tests/web-smoke.sh` exercises the web layer outside Docker; the container
+   runtime check curls `/health`, the dashboard, `/api/v1/exec` round-trip and
+   `/api/v1/git-sign` on the mapped ports, then `docker rm -f` the container and
+   confirm no leaked listeners on the host.
