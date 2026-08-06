@@ -85,3 +85,8 @@ host bootstrap.
    with `.env.project`.
 4. Git wiring — README section covering `gh auth git-credential`, `ssh-sign.sh`,
    and `allowed-signers` for self-hosted repos.
+5. Control-plane auth — `NEXOS_LOG_PROXY_TOKEN` / `NEXOS_BRIDGE_TOKEN` require a
+   bearer token from remote clients when `NEXOS_ALLOW_REMOTE=true` (loopback stays
+   trusted); remote log-proxy clients without a token are forced non-admin.
+   Covered by smoke tests; this closed the "auth for the control plane" future-work
+   item in `MIGRATION-REPORT.md`.

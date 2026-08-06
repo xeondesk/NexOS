@@ -243,8 +243,9 @@ down cleanly with no leaked processes on the host.
 
 - Self-hosted **agent-browser ingress**: a NexOS-owned reverse proxy / tunnel
   replacing `VSCODE_PROXY_URI` for the `*.nexos.build` hostnames.
-- **Auth for the control plane**: optional token/`adminOnly` enforcement over
-  remote clients when `NEXOS_ALLOW_REMOTE=true`.
+- **Auth for the control plane** — **done**: `NEXOS_LOG_PROXY_TOKEN` /
+  `NEXOS_BRIDGE_TOKEN` enforce bearer-token auth for remote clients (loopback
+  stays trusted, remote clients are forced non-admin without a token).
 - **Extension packaging**: publish `bridge/editor-extension/` as an installable
   VSIX.
 - **Self-hosted signing service**: a reference `git-sign` server implementation

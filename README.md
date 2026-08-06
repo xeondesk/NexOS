@@ -75,6 +75,13 @@ are published through Docker port mapping the connection arrives from a
 non-loopback address, so set `NEXOS_ALLOW_REMOTE=true` to serve it (see the
 commented example in `docker-compose.yml`).
 
+**Control-plane auth:** set `NEXOS_LOG_PROXY_TOKEN` and/or `NEXOS_BRIDGE_TOKEN`
+to require a bearer token from remote clients (`Authorization: Bearer <token>`).
+Loopback requests stay token-free and remain trusted. Remote clients without a
+valid token get `401`, and (for the log-proxy) are treated as non-admin — they
+cannot see `adminOnly` log lines, which also means a token-authed client is
+required to read those lines remotely.
+
 ## Configuration
 
 Everything is overridable via `NEXOS_*` env vars (see `config/nexos.conf`):

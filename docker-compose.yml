@@ -33,6 +33,10 @@ services:
       # Uncomment to make the control plane reachable through the published
       # ports (required for remote IDE hosts / proxied access):
       # - NEXOS_ALLOW_REMOTE=true
+      # When remote access is on, require a bearer token for the control
+      # plane (loopback stays token-free):
+      # - NEXOS_LOG_PROXY_TOKEN=changeme
+      # - NEXOS_BRIDGE_TOKEN=changeme
       # Service gating (defaults: log-proxy on; editor/terminal on if the
       # binary exists; bridge on; metrics on if a callback URL is configured):
       # - NEXOS_ENABLE_EDITOR=true

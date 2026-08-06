@@ -28,6 +28,7 @@ class NexOSBridgeApiServer {
       10,
     )
     this.host = options.host || process.env.NEXOS_BRIDGE_HOST || '127.0.0.1'
+    this.token = options.token || process.env.NEXOS_BRIDGE_TOKEN || ''
     this.server = null
   }
 
@@ -45,6 +46,22 @@ class NexOSBridgeApiServer {
     const sendResponse = (statusCode, data) => {
       res.writeHead(statusCode, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(data))
+    }
+
+    // Security: loopback requests are trusted; non-loopback requests must
+    // present the bearer token when NEXOS_BRIDGE_TOKEN is configured.
+    const remoteAddress = req.socket?.remoteAddress || ''
+    const isLocalhost =
+      remoteAddress === '127.0.0.1' ||
+      remoteAddress === '::1' ||
+      remoteAddress === '::ffff:127.0.0.1'
+    if (!isLocalhost && this.token) {
+      const header = req.headers['authorization'] || ''
+      const match = /^Bearer\s+(.+)$/i.exec(header)
+      if (!(match && match[1] === this.token)) {
+        sendResponse(401, { error: 'Unauthorized' })
+        return
+      }
     }
 
     if (req.method === 'GET' && req.url === '/status') {

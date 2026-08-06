@@ -84,6 +84,23 @@ if [ -n "$REMOTE_IP" ]; then
     [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 "http://$REMOTE_IP:$PORT2/status" 2>/dev/null)" = "200" ]
   kill "$BRIDGE2" 2>/dev/null
   wait "$BRIDGE2" 2>/dev/null
+
+  # --- bearer token auth (NEXOS_BRIDGE_TOKEN) ---
+  PORT3=$((PORT + 2))
+  NEXOS_BRIDGE_PORT="$PORT3" NEXOS_ALLOW_REMOTE=true NEXOS_BRIDGE_TOKEN="secret-$PORT" \
+    node "$NEXOS_ROOT/bridge/standalone.js" >"$TMP/bridge3.log" 2>&1 &
+  BRIDGE3=$!
+  sleep 1
+  check "bridge remote without token gets 401" \
+    [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 "http://$REMOTE_IP:$PORT3/status" 2>/dev/null)" = "401" ]
+  check "bridge remote with wrong token gets 401" \
+    [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 -H "Authorization: Bearer nope" "http://$REMOTE_IP:$PORT3/status" 2>/dev/null)" = "401" ]
+  check "bridge remote with valid token is served" \
+    [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 -H "Authorization: Bearer secret-$PORT" "http://$REMOTE_IP:$PORT3/status" 2>/dev/null)" = "200" ]
+  check "bridge loopback needs no token even when configured" \
+    [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 "http://127.0.0.1:$PORT3/status" 2>/dev/null)" = "200" ]
+  kill "$BRIDGE3" 2>/dev/null
+  wait "$BRIDGE3" 2>/dev/null
 else
   echo "skipped: no non-loopback interface for remote-reachability check"
 fi
