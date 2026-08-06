@@ -10,6 +10,9 @@ config/nexos.env
 # Editor tooling caches
 *.tsbuildinfo
 
+# Build artifacts (VSIX produced by bridge/editor-extension/build-vsix.sh)
+**/*.vsix
+
 # SCM / editor noise
 .git
 .gitignore

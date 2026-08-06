@@ -183,6 +183,17 @@ editors (or reloads the window), and `set-workspace-name` updates the
 status-bar label. It reads `NEXOS_BRIDGE_PORT` / `NEXOS_BRIDGE_HOST` /
 `NEXOS_ALLOW_REMOTE` from the code-server process environment.
 
+The extension also ships as an installable, self-contained VSIX:
+
+```sh
+bash bridge/editor-extension/build-vsix.sh
+code-server --install-extension bridge/editor-extension/nexos-bridge-0.1.0.vsix
+```
+
+The build vendors `bridge-api.js` into the package and strips the source-tree
+fallback require, so the VSIX has no host-path assumptions
+(`tests/vsix-smoke.sh` verifies this).
+
 ## Migration
 
 See [COMPONENT-MAP.md](./COMPONENT-MAP.md) for the source-to-NexOS mapping of

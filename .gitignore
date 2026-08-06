@@ -7,3 +7,5 @@ config/nexos.env
 # Editor data
 *.tsbuildinfo
 .DS_Store
+# Build artifacts
+nexos-bridge-*.vsix

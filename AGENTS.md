@@ -22,7 +22,9 @@ is explicitly out of scope for migration.
 
 ## Commands
 
-- Tests: `npm test` (supervisor + log-proxy + metrics + bridge + editor-extension smoke tests)
+- Tests: `npm test` (supervisor + log-proxy + metrics + bridge + editor-extension + vsix packaging smoke tests)
+- VSIX: `bash bridge/editor-extension/build-vsix.sh` (vendors `bridge-api.js`,
+  strips the source-tree fallback require, emits `nexos-bridge-<ver>.vsix`)
 - CLI smoke: `bin/nexos status`, `bin/nexos exec "node -v"`
 - Docker build: `docker build -t nexos .`
 - Docker run: `docker run -p 4444:4444 -p 7681:7681 -p 7682:7682 -v "$PWD/workspace:/workspace" nexos`
@@ -62,6 +64,16 @@ install the compose file / README port mapping applies as written.
   (filesystem handlers, supervised by default in the container) and
   `bridge/editor-extension/` (live editor handlers, loaded via
   `code-server --extensions-dir`). Run one or the other, never both.
+- **VSIX packaging**: `build-vsix.sh` stages a copy of the extension, vendors
+  `bridge-api.js` as `./bridge-api.js`, and strips the `../bridge-api` fallback
+  from `extension.js`, so the VSIX is self-contained. vsce lowercases
+  `README.md` → `readme.md` inside the package. Covered by `tests/vsix-smoke.sh`
+  (builds, unzips, asserts no outside-package require, runs the packaged
+  extension.js against a stubbed vscode).
+- **`.dockerignore` globbing**: Docker uses Go `filepath.Match`, so a pattern
+  without a `/` does NOT match files in subdirectories — `nexos-bridge-*.vsix`
+  silently fails to exclude `bridge/editor-extension/*.vsix` from `COPY . .`.
+  Use `**/*.vsix` (or a leading `**/`) for nested build artifacts.
 - **Control-plane reachability**: loopback-only by default. `NEXOS_ALLOW_REMOTE=true`
   makes the log-proxy accept non-loopback clients and the bridge bind 0.0.0.0.
   Required when ports are published through Docker (docker-proxy arrives from a

@@ -21,8 +21,19 @@
 //
 // `require('vscode')` is deliberately only evaluated inside activate() so the
 // module stays loadable under test with a stubbed vscode.
+//
+// The bridge transport is resolved from `./bridge-api` when present (the copy
+// vendored by `build-vsix.sh`, which also strips the fallback so the packaged
+// VSIX is self-contained), falling back to `../bridge-api` for source-tree
+// installs. The extension therefore works both unpacked in the repo and inside
+// a packaged VSIX.
 
-const { NexOSBridgeApiServer } = require('../bridge-api')
+let NexOSBridgeApiServer
+try {
+  ;({ NexOSBridgeApiServer } = require('./bridge-api'))
+} catch {
+  ;({ NexOSBridgeApiServer } = require('../bridge-api'))
+}
 
 async function activate(context) {
   const vscode = require('vscode')

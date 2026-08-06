@@ -4,6 +4,10 @@
   "description": "Wires the NexOS bridge control plane to live editor behavior (read-only toggle, file reload, workspace name).",
   "version": "0.1.0",
   "publisher": "nexos",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xeondesk/NexOS.git"
+  },
   "engines": {
     "vscode": "^1.60.0"
   },
@@ -14,5 +18,16 @@
     "onStartupFinished"
   ],
   "main": "./extension.js",
+  "files": [
+    "extension.js",
+    "bridge-api.js",
+    "package.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "package": "bash build-vsix.sh",
+    "vsix": "bash build-vsix.sh"
+  },
   "license": "MIT"
 }

@@ -246,8 +246,9 @@ down cleanly with no leaked processes on the host.
 - **Auth for the control plane** — **done**: `NEXOS_LOG_PROXY_TOKEN` /
   `NEXOS_BRIDGE_TOKEN` enforce bearer-token auth for remote clients (loopback
   stays trusted, remote clients are forced non-admin without a token).
-- **Extension packaging**: publish `bridge/editor-extension/` as an installable
-  VSIX.
+- **Extension packaging** — **done**: `bridge/editor-extension/build-vsix.sh`
+  emits a self-contained `nexos-bridge-<ver>.vsix` (vendored transport, stripped
+  fallback); verified by `tests/vsix-smoke.sh`.
 - **Self-hosted signing service**: a reference `git-sign` server implementation
   so `NEXOS_GIT_SIGN_URL` can point at an owned endpoint (currently defaults to
   the legacy v0 service).

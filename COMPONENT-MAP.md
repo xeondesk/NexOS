@@ -16,7 +16,7 @@ Scope note: `/vercel/share/v0-project/` is excluded by instruction.
 | 7 | `/vercel/share/v0-ttyd.sh` | `services/terminal.sh` | `-p NEXOS_TERMINAL_PORT` (7681), `-w NEXOS_WORKSPACE`. Theme/UX flags unchanged. |
 | 8 | `code-server v0-bridge` extension `api-server.js` | `bridge/bridge-api.js` | Rewritten from transpiled CJS to a clean standalone class (`NexOSBridgeApiServer`) with handler injection + `NEXOS_BRIDGE_PORT`/`NEXOS_BRIDGE_HOST`. Routes unchanged: `GET /status`, `POST /set-readonly`, `/reload-files`, `/set-workspace-name`. |
 | 8a | — | `bridge/standalone.js` | New supervised bootstrap for the bridge: instantiates the server with filesystem-backed default handlers persisting to `state/run/` (`readonly`, `workspace-name`, `readonly-reasons.log`, `reload-requests.log`). Registered as built-in service `bridge` and started by the container entrypoint. |
-| 8b | — | `bridge/editor-extension/` | New code-server extension reproducing the v0 live-editor bridge behavior: same transport, but handlers act on the open editor (`files.readonlyInclude` toggle, revert/reload of files, status-bar workspace label). Load via `code-server --extensions-dir`; use instead of the standalone bridge (they share the port). |
+| 8b | — | `bridge/editor-extension/` | New code-server extension reproducing the v0 live-editor bridge behavior: same transport, but handlers act on the open editor (`files.readonlyInclude` toggle, revert/reload of files, status-bar workspace label). Load via `code-server --extensions-dir` or install the `nexos-bridge-*.vsix` built by `build-vsix.sh` (vendored transport, self-contained; `tests/vsix-smoke.sh`). Use instead of the standalone bridge (they share the port). |
 
 ## Reachability (new config, no v0 source)
 

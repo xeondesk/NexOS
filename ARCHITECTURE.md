@@ -90,3 +90,7 @@ host bootstrap.
    trusted); remote log-proxy clients without a token are forced non-admin.
    Covered by smoke tests; this closed the "auth for the control plane" future-work
    item in `MIGRATION-REPORT.md`.
+6. VSIX packaging — `bridge/editor-extension/build-vsix.sh` publishes the bridge
+   extension as an installable VSIX: vendored `bridge-api.js`, source-tree
+   fallback stripped, verified self-contained by `tests/vsix-smoke.sh`. Closed the
+   "extension packaging" future-work item.
