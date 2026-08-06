@@ -1,0 +1,20 @@
+{
+  "name": "nexos",
+  "version": "0.1.0",
+  "description": "NexOS — self-hosted development environment orchestration (supervisor, log/exec control plane, metrics, editor+terminal services, framework runtime hooks)",
+  "private": true,
+  "type": "commonjs",
+  "license": "MIT",
+  "bin": {
+    "nexos": "./bin/nexos"
+  },
+  "scripts": {
+    "test": "bash tests/supervisor-smoke.sh && node tests/log-proxy-smoke.mjs && bash tests/metrics-smoke.sh"
+  },
+  "dependencies": {
+    "ws": "^8.19.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

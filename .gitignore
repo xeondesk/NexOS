@@ -1,0 +1,9 @@
+# Runtime state — pidfiles, locks, logs
+state/
+# Node deps
+node_modules/
+# Local overrides (never commit)
+config/nexos.env
+# Editor data
+*.tsbuildinfo
+.DS_Store

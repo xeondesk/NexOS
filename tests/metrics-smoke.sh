@@ -1,0 +1,81 @@
+#!/bin/bash
+# Metrics smoke test: --once posts a metrics_report to a local callback server,
+# and the no-callback path exits cleanly.
+set -u
+
+NEXOS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TMP="$(mktemp -d)"
+FAIL=0
+
+check() {
+  local desc="$1"; shift
+  if "$@"; then
+    echo "ok: $desc"
+  else
+    echo "FAIL: $desc"
+    FAIL=1
+  fi
+}
+
+# --- case 1: with callback -------------------------------------------------
+PORT=7699
+RECORDED="$TMP/recorded.json"
+
+node -e "
+  const http = require('http');
+  const fs = require('fs');
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      fs.writeFileSync('$RECORDED', body);
+      res.writeHead(200); res.end('ok');
+      server.close();
+    });
+  });
+  server.listen($PORT, '127.0.0.1');
+" &
+CBSERVER=$!
+sleep 0.5
+
+cat >"$TMP/nexos.env" <<EOF
+NEXOS_CALLBACK_URL='http://127.0.0.1:${PORT}'
+NEXOS_CALLBACK_TOKEN='test-token'
+NEXOS_CALLBACK_DEPLOYMENT_TARGET='test-target'
+EOF
+
+NEXOS_ENV_FILE="$TMP/nexos.env" bash "$NEXOS_ROOT/lib/metrics.sh" --once
+wait "$CBSERVER" 2>/dev/null
+
+check "metrics payload recorded" [ -s "$RECORDED" ]
+if [ -s "$RECORDED" ]; then
+  node -e "
+    const p = JSON.parse(require('fs').readFileSync('$RECORDED', 'utf8'));
+    const m = p.metrics || {};
+    const ok = p.type === 'metrics_report'
+      && typeof m.memTotalMB === 'number'
+      && typeof m.memUsedPercent === 'number'
+      && typeof m.cpuUsagePercent === 'number'
+      && typeof m.diskUsedPercent === 'number'
+      && typeof m.loadAvg1m === 'number';
+    if (!ok) { console.log(JSON.stringify(p)); process.exit(1); }
+    console.log('ok: metrics payload shape');
+  " || FAIL=1
+fi
+
+# --- case 2: no callback configured ----------------------------------------
+if NEXOS_ENV_FILE="$TMP/empty.env" bash "$NEXOS_ROOT/lib/metrics.sh" --once; then
+  echo "ok: no-callback path exits cleanly"
+else
+  echo "FAIL: no-callback path exited non-zero"
+  FAIL=1
+fi
+
+rm -rf "$TMP"
+
+if [ "$FAIL" -eq 0 ]; then
+  echo "metrics-smoke: PASS"
+else
+  echo "metrics-smoke: FAIL"
+  exit 1
+fi

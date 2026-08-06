@@ -1,0 +1,26 @@
+# Node deps (installed during image build)
+node_modules
+
+# Runtime state — pidfiles, locks, logs (mounted as a volume at runtime)
+state
+
+# Local secrets — never baked into an image
+config/nexos.env
+
+# Editor tooling caches
+*.tsbuildinfo
+
+# SCM / editor noise
+.git
+.gitignore
+.DS_Store
+.idea
+.vscode
+
+# Logs
+*.log
+
+# Compose file doesn't belong in the image context (it references ./Dockerfile)
+# but Dockerfile is required; keep both out of the runtime tree by copying
+# selectively instead — see the COPY line in the Dockerfile.
+docker-compose.yml

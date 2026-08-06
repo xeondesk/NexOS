@@ -1,0 +1,46 @@
+# NexOS development environment — ready-to-run deployment.
+#
+#   docker compose up -d
+#   open http://localhost:4444   (VS Code web)
+#   open http://localhost:7681   (web terminal)
+#   curl  http://localhost:7682/health   (control plane)
+
+services:
+  nexos:
+    build:
+      context: .
+    image: nexos:latest
+    container_name: nexos
+    restart: unless-stopped
+    ports:
+      - "4444:4444"   # code-server editor
+      - "7681:7681"   # ttyd terminal
+      - "7682:7682"   # log-proxy control plane
+      - "9876:9876"   # bridge API (localhost-only by default)
+    volumes:
+      - ./workspace:/workspace            # your code lives here
+      - nexos-state:/opt/nexos/state      # logs, pidfiles, editor config
+      # mount identity without baking it into the image:
+      # - ./nexos.env:/opt/nexos/config/nexos.env:ro
+    environment:
+      - NEXOS_EDITOR_PORT=4444
+      - NEXOS_TERMINAL_PORT=7681
+      - NEXOS_LOG_PROXY_PORT=7682
+      - NEXOS_BRIDGE_PORT=9876
+      # Service gating (defaults: log-proxy on; editor/terminal on if the
+      # binary exists; metrics on if a callback URL is configured):
+      # - NEXOS_ENABLE_EDITOR=true
+      # - NEXOS_ENABLE_TERMINAL=true
+      # - NEXOS_ENABLE_METRICS=false
+      # Callback identity (metrics + sync events):
+      # - NEXOS_CALLBACK_URL=
+      # - NEXOS_CALLBACK_TOKEN=
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7682/health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 15s
+      retries: 5
+
+volumes:
+  nexos-state:

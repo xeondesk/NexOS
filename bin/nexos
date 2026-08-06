@@ -1,0 +1,130 @@
+#!/bin/bash
+# NexOS CLI — front door to the NexOS development environment.
+#
+#   nexos init                 create state dirs + env template, install deps
+#   nexos start <service>      start a service under the supervisor
+#   nexos restart <service>    stop + start a service
+#   nexos stop <service>       stop a service
+#   nexos run <service>        run a service in the foreground (supervisor mode)
+#   nexos status               show supervised services
+#   nexos exec <cmd...>        run a command through the log-proxy control plane
+#   nexos version              print the NexOS version
+#
+# Built-in services: editor, terminal, log-proxy, metrics, bridge.
+# Custom services: nexos start <name> -- <command...>
+
+set -u
+NEXOS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$NEXOS_ROOT/config/nexos.conf"
+
+SUPERVISOR="$NEXOS_ROOT/lib/supervisor.sh"
+
+usage() {
+  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+service_cmd() {
+  case "$1" in
+    editor) echo "bash $NEXOS_ROOT/services/editor.sh" ;;
+    terminal) echo "bash $NEXOS_ROOT/services/terminal.sh" ;;
+    log-proxy) echo "bash -c 'cd $NEXOS_ROOT && node lib/log-proxy.js'" ;;
+    metrics) echo "bash $NEXOS_ROOT/lib/metrics.sh" ;;
+    bridge) echo "bash -c 'cd $NEXOS_ROOT && node bridge/standalone.js'" ;;
+    *) echo "" ;;
+  esac
+}
+
+version() {
+  node -p "require('$NEXOS_ROOT/package.json').version" 2>/dev/null || echo "unknown"
+}
+
+status() {
+  local found=0 pid child
+  for pidfile in "$NEXOS_RUN_DIR"/*.pid; do
+    [ -e "$pidfile" ] || continue
+    # skip child-pid markers; only the supervisor pidfiles name a service
+    case "$(basename "$pidfile")" in *.child.pid) continue ;; esac
+    local name
+    name=$(basename "$pidfile" .pid)
+    pid=$(cat "$pidfile" 2>/dev/null) || pid="?"
+    child=$(cat "$NEXOS_RUN_DIR/$name.child.pid" 2>/dev/null) || child="-"
+    if ps -o command= -p "$pid" 2>/dev/null | grep -qF "supervisor.sh run $name"; then
+      printf '%-14s running   supervisor pid %s, child pid %s\n' "$name" "$pid" "$child"
+    else
+      printf '%-14s stale     (pidfile %s, child %s)\n' "$name" "$pid" "$child"
+    fi
+    found=1
+  done
+  [ "$found" -eq 0 ] && echo "no services supervised"
+}
+
+cmd="${1:-}"
+case "$cmd" in
+  init)
+    mkdir -p "$NEXOS_LOG_DIR" "$NEXOS_RUN_DIR" "$NEXOS_CONFIG_DIR" "$NEXOS_USER_DATA_DIR" "$NEXOS_WORKSPACE"
+    if [ ! -f "$NEXOS_ROOT/config/nexos.env" ]; then
+      cp "$NEXOS_ROOT/config/nexos.env.example" "$NEXOS_ROOT/config/nexos.env"
+      echo "created config/nexos.env (edit it with your callback identity)"
+    fi
+    echo "installing dependencies..."
+    (cd "$NEXOS_ROOT" && npm install --no-audit --no-fund)
+    echo "NexOS initialized at $NEXOS_ROOT"
+    ;;
+  start | restart | stop)
+    name="${2:?usage: nexos $cmd <service> [-- command...]}"
+    shift 2
+    if [ "${1:-}" = "--" ]; then shift; fi
+    local_cmd=""
+    if [ $# -eq 0 ]; then
+      local_cmd=$(service_cmd "$name")
+      if [ -z "$local_cmd" ]; then
+        echo "unknown built-in service: $name (pass a command explicitly)" >&2
+        exit 1
+      fi
+      "$SUPERVISOR" "$cmd" "$name" -- bash -c "$local_cmd"
+    else
+      "$SUPERVISOR" "$cmd" "$name" -- "$@"
+    fi
+    ;;
+  run)
+    name="${2:?usage: nexos run <service> [-- command...]}"
+    shift 2
+    if [ "${1:-}" = "--" ]; then shift; fi
+    if [ $# -eq 0 ]; then
+      local_cmd=$(service_cmd "$name")
+      if [ -z "$local_cmd" ]; then
+        echo "unknown built-in service: $name (pass a command explicitly)" >&2
+        exit 1
+      fi
+      exec bash -c "$local_cmd"
+    fi
+    exec "$@"
+    ;;
+  status)
+    status
+    ;;
+  exec)
+    shift
+    port="${NEXOS_LOG_PROXY_PORT:-7682}"
+    # Split the command line into cmd + args (the /execute contract takes the
+    # binary in `cmd` and the rest in `args`).
+    body=$(node -e "
+      const line = process.argv.slice(1).join(' ').trim();
+      const parts = line.match(/(?:[^\s\"']+|\"[^\"]*\"|'[^']*')+/g) || [];
+      const clean = parts.map((p) => p.replace(/^[\"']|[\"']$/g, ''));
+      console.log(JSON.stringify({ cmd: clean[0] || '', args: clean.slice(1), wait: true }));
+    " "$@")
+    curl -s -m 120 -X POST -H 'Content-Type: application/json' \
+      -d "$body" "http://127.0.0.1:${port}/execute"
+    ;;
+  version | --version)
+    version
+    ;;
+  help | --help | -h)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
