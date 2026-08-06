@@ -6,11 +6,12 @@
 #   nexos restart <service>    stop + start a service
 #   nexos stop <service>       stop a service
 #   nexos run <service>        run a service in the foreground (supervisor mode)
+#   nexos sign-keygen [dir]    generate a git-sign keypair (default state/sign)
 #   nexos status               show supervised services
 #   nexos exec <cmd...>        run a command through the log-proxy control plane
 #   nexos version              print the NexOS version
 #
-# Built-in services: editor, terminal, log-proxy, metrics, bridge.
+# Built-in services: editor, terminal, log-proxy, metrics, bridge, git-sign.
 # Custom services: nexos start <name> -- <command...>
 
 set -u
@@ -30,6 +31,7 @@ service_cmd() {
     log-proxy) echo "bash -c 'cd $NEXOS_ROOT && node lib/log-proxy.js'" ;;
     metrics) echo "bash $NEXOS_ROOT/lib/metrics.sh" ;;
     bridge) echo "bash -c 'cd $NEXOS_ROOT && node bridge/standalone.js'" ;;
+    git-sign) echo "bash -c 'cd $NEXOS_ROOT && node git/sign-server.js'" ;;
     *) echo "" ;;
   esac
 }
@@ -85,6 +87,10 @@ case "$cmd" in
     else
       "$SUPERVISOR" "$cmd" "$name" -- "$@"
     fi
+    ;;
+  sign-keygen)
+    dir="${2:-$NEXOS_ROOT/state/sign}"
+    node "$NEXOS_ROOT/git/sign-keygen.js" "$dir"
     ;;
   run)
     name="${2:?usage: nexos run <service> [-- command...]}"

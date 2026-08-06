@@ -249,9 +249,14 @@ down cleanly with no leaked processes on the host.
 - **Extension packaging** — **done**: `bridge/editor-extension/build-vsix.sh`
   emits a self-contained `nexos-bridge-<ver>.vsix` (vendored transport, stripped
   fallback); verified by `tests/vsix-smoke.sh`.
-- **Self-hosted signing service**: a reference `git-sign` server implementation
-  so `NEXOS_GIT_SIGN_URL` can point at an owned endpoint (currently defaults to
-  the legacy v0 service).
+- **Self-hosted signing service** — **done**: `git/sign-server.js` is a reference
+  implementation of the v0 git-sign endpoint (ed25519, SHA-256/SHA-512, token
+  gate, namespace-bound signatures) so `NEXOS_GIT_SIGN_URL` can point at an owned
+  endpoint. Keys come from `nexos sign-keygen`. Its SSHSIG output is
+  byte-for-byte identical to `ssh-keygen -Y sign` for the same key, and is
+  verified independently by `tests/verify-sshsig.mjs` (a faithful
+  reimplementation of `ssh-keygen -Y verify`); covered by
+  `tests/sign-server-smoke.sh`.
 
 ---
 

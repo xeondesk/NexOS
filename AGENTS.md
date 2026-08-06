@@ -17,12 +17,12 @@ is explicitly out of scope for migration.
 - `lib/` — supervisor.sh, log-proxy.js, metrics.sh, register.mjs, config-loader.mjs
 - `services/` — editor.sh (code-server), terminal.sh (ttyd)
 - `bridge/bridge-api.js` — standalone control API for editor hosts
-- `git/` — ssh-sign.sh, allowed-signers, credential-helper
+- `git/` — ssh-sign.sh, sign-server.js, sign-keygen.js, allowed-signers, credential-helper
 - `tests/` — smoke tests; `workspace/` — mounted code dir
 
 ## Commands
 
-- Tests: `npm test` (supervisor + log-proxy + metrics + bridge + editor-extension + vsix packaging smoke tests)
+- Tests: `npm test` (supervisor + log-proxy + metrics + bridge + editor-extension + vsix packaging + git-sign smoke tests)
 - VSIX: `bash bridge/editor-extension/build-vsix.sh` (vendors `bridge-api.js`,
   strips the source-tree fallback require, emits `nexos-bridge-<ver>.vsix`)
 - CLI smoke: `bin/nexos status`, `bin/nexos exec "node -v"`
@@ -86,6 +86,22 @@ install the compose file / README port mapping applies as written.
   (and by the entrypoint) from `nexos.env.example`. `.gitignore` covers it.
   `metrics.sh` accepts `NEXOS_CALLBACK_*`, per-service `NEXOS_CODE_SERVER_CALLBACK_*`,
   and legacy `V0_*` names, in that preference order.
+- **git-sign wire format**: the SSHSIG namespace and hashalg are serialized as
+  plain RFC 4251 strings (NO trailing NUL) in both the signed message and the
+  blob — this matches OpenSSH 8.7 (newer sshsig.c uses cstrings). Proven by
+  byte-identical output vs `ssh-keygen -Y sign`. Never use `crypto.sign` against
+  the raw blob; the tosign is `"SSHSIG" + s(ns) + s("") + s(alg) + s(H(data))`.
+- **ssh-keygen -Y verify regression on AL2023**: this host's OpenSSH 8.7p1 +
+  OpenSSL 3.5.5 rejects EVERY signature — including ssh-keygen's own — with
+  "Signature verification failed: incorrect signature". Do not treat that tool
+  as an oracle here; `tests/verify-sshsig.mjs` is the reference verifier, and
+  `tests/sign-server-smoke.sh` probes the tool once and only runs tool-backed
+  checks when it is healthy.
+- **git-sign service**: `NEXOS_GIT_SIGN_KEY` (or `NEXOS_GIT_SIGN_KEY_PEM`) is
+  required to start; `nexos sign-keygen [dir]` emits PKCS#8 PEM + OpenSSH pub.
+  Token gate: non-loopback requests need `Authorization: Bearer $NEXOS_GIT_SIGN_TOKEN`;
+  loopback always trusted. `NEXOS_GIT_SIGN_ALLOW_REMOTE`/`NEXOS_ALLOW_REMOTE=true`
+  binds 0.0.0.0. The entrypoint skips git-sign unless a key is configured.
 
 ## Verification flow
 

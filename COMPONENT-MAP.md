@@ -24,7 +24,7 @@ Scope note: `/vercel/share/v0-project/` is excluded by instruction.
 policy for Docker port publishing: `lib/log-proxy.js` skips the 403 for
 non-loopback clients and `bridge/standalone.js` / `bridge/editor-extension`
 bind `0.0.0.0`. Covered by smoke tests.
-| 9 | `/vercel/share/v0-git-ssh-sign` | `git/ssh-sign.sh` | Endpoint → `NEXOS_GIT_SIGN_URL` (default: legacy v0 signing service); namespace header name → `NEXOS_GIT_SIGN_NAMESPACE_HEADER`. Parsing/exit codes unchanged. |
+| 9 | `/vercel/share/v0-git-ssh-sign` | `git/ssh-sign.sh` | Endpoint → `NEXOS_GIT_SIGN_URL` (default: legacy v0 signing service); namespace header name → `NEXOS_GIT_SIGN_NAMESPACE_HEADER`; bearer token via `NEXOS_GIT_SIGN_TOKEN`. Parsing/exit codes unchanged. |
 | 10 | `/vercel/share/v0-git-ssh-allowed-signers` | `git/allowed-signers` | Reference file; principal renamed to the NexOS identity. |
 | 11 | `/vercel/bin/git-credential-helper` | `git/credential-helper` | Reads `NEXOS_GIT_USERNAME/PASSWORD` (fallback `GIT_*`). |
 
@@ -35,7 +35,8 @@ bind `0.0.0.0`. Covered by smoke tests.
 | `Dockerfile` | Container image | `node:22-bookworm-slim` base; code-server installed from GitHub release tarball (npm package breaks under npm 10/11); ttyd fetched as a static binary and checksum-verified (Debian bookworm dropped it); runs unprivileged as `nexos` uid 2000; multi-arch via `TARGETARCH`; `HEALTHCHECK` polls the control plane. |
 | `.dockerignore` | Build-context trim | Excludes state/logs, node_modules, `config/nexos.env`, compose file, test cruft. |
 | `docker-compose.yml` | Declarative run | Ports 4444/7681/7682/9876, `./workspace:/workspace` + `nexos-state` volume, `NEXOS_ENABLE_*` gating comments, healthcheck. |
-| `bin/entrypoint.sh` | PID-1 entrypoint | Sources `config/nexos.conf`, synthesizes `config/nexos.env` from the example if absent, starts each gated service via the supervisor, traps SIGTERM/SIGINT for clean shutdown. Metrics auto-skip unless a non-empty callback URL is configured. |
+| `bin/entrypoint.sh` | PID-1 entrypoint | Sources `config/nexos.conf`, synthesizes `config/nexos.env` from the example if absent, starts each gated service via the supervisor, traps SIGTERM/SIGINT for clean shutdown. Metrics auto-skip unless a non-empty callback URL is configured; git-sign auto-skips without a signing key. |
+| `git/sign-server.js` | Self-hosted git-sign service | Reference replacement for the legacy v0 git-sign endpoint: `GET /health`, `GET /pubkey`, `POST /sign` (raw payload, namespace in `x-v0-git-signing-namespace` header, SHA-256/SHA-512). Ed25519 key via `nexos sign-keygen`. SSHSIG output byte-identical to `ssh-keygen -Y sign`; verified by `tests/verify-sshsig.mjs` + `tests/sign-server-smoke.sh`. |
 
 ## Not migrated (platform-owned / not reusable)
 

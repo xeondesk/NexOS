@@ -94,3 +94,13 @@ host bootstrap.
    extension as an installable VSIX: vendored `bridge-api.js`, source-tree
    fallback stripped, verified self-contained by `tests/vsix-smoke.sh`. Closed the
    "extension packaging" future-work item.
+7. Self-hosted git-sign service — `git/sign-server.js` (supervised as `git-sign`,
+   keys via `nexos sign-keygen`) replaces the legacy v0 git-sign endpoint:
+   ed25519 signing, SHA-256/SHA-512, namespace-bound signatures, bearer-token
+   gate for remote clients, `GET /health` / `GET /pubkey` / `POST /sign`. The
+   emitted SSHSIG blobs are byte-for-byte identical to `ssh-keygen -Y sign` for
+   the same key/data/namespace; `tests/verify-sshsig.mjs` independently verifies
+   them (a faithful reimplementation of `ssh-keygen -Y verify`), and
+   `tests/sign-server-smoke.sh` covers the service, client, namespace binding and
+   token gate. `NEXOS_GIT_SIGN_URL` now points at the owned endpoint by default.
+   Closed the "self-hosted signing service" future-work item.

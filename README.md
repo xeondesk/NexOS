@@ -28,10 +28,12 @@ nexos/
 │   └── standalone.js     supervised bridge service (filesystem-backed handlers)
 ├── git/
 │   ├── ssh-sign.sh       ssh-keygen -Y sign proxy → hosted signing service
+│   ├── sign-server.js    reference git-sign service (ed25519, token-gated)
+│   ├── sign-keygen.js    git-sign keypair generator (nexos sign-keygen)
 │   ├── allowed-signers   trusted signing keys
 │   └── credential-helper git credential fill helper
 ├── state/                runtime: logs/, run/ (pidfiles + locks)
-└── tests/                supervisor / log-proxy / metrics smoke tests
+└── tests/                supervisor / log-proxy / metrics / git-sign smoke tests
 ```
 
 ## Quick start
@@ -43,6 +45,8 @@ nexos start terminal       # web terminal on NEXOS_TERMINAL_PORT (7681)
 nexos start editor         # VS Code web on NEXOS_EDITOR_PORT (4444)
 nexos start metrics        # metrics daemon
 nexos start bridge         # control API for editor hosts (NEXOS_BRIDGE_PORT, 9876)
+nexos sign-keygen          # git-sign keypair (state/sign/sign-key.{pem,pub})
+nexos start git-sign       # self-hosted SSH signing service (NEXOS_GIT_SIGN_PORT, 9877)
 nexos status
 nexos exec "node -v"       # run through the control plane, logs streamed
 nexos stop editor
@@ -113,8 +117,19 @@ NexOS ships three git helpers under `git/`; wire them per your provider:
   git config --global gpg.ssh.allowedSignersFile $NEXOS_ROOT/git/allowed-signers
   git config --global commit.gpgsign true
   ```
-  Set `NEXOS_GIT_SIGN_URL` and `NEXOS_GIT_SIGN_NAMESPACE_HEADER` to point at
-  your own signing service (defaults target the legacy v0 one).
+  `ssh-sign.sh` posts the payload to `NEXOS_GIT_SIGN_URL` (defaults to the legacy
+  v0 endpoint). To sign with your own service instead, generate a keypair and
+  point the endpoint at the bundled reference sign service:
+  ```
+  nexos sign-keygen            # writes state/sign/sign-key.{pem,pub}
+  export NEXOS_GIT_SIGN_KEY=$NEXOS_ROOT/state/sign/sign-key.pem
+  nexos start git-sign         # or run `nexos run git-sign`
+  export NEXOS_GIT_SIGN_URL=http://127.0.0.1:9877/sign
+  ```
+  Add the public key line from `state/sign/sign-key.pub` (prefixed with a
+  principal) to `git/allowed-signers`. Signatures are namespace-bound and
+  SHA-512; set a `NEXOS_GIT_SIGN_TOKEN` to gate remote clients with a bearer
+  token.
 - **Generic (HTTPS basic auth)** — set `NEXOS_GIT_USERNAME` / `NEXOS_GIT_PASSWORD`
   and install the helper:
   ```
@@ -124,7 +139,7 @@ NexOS ships three git helpers under `git/`; wire them per your provider:
 ## Tests
 
 ```sh
-npm test   # supervisor + log-proxy + metrics + bridge smoke tests
+npm test   # supervisor + log-proxy + metrics + bridge + extension + git-sign smoke tests
 ```
 
 ## Docker

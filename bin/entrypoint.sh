@@ -29,6 +29,13 @@ has_callback() {
   grep -qE "^(NEXOS_CALLBACK_URL|NEXOS_CODE_SERVER_CALLBACK_URL|V0_CODE_SERVER_CALLBACK_URL)='?[^'[:space:]]" "$f"
 }
 
+has_sign_key() {
+  # The git-sign service is only useful with a signing key configured.
+  [ -n "${NEXOS_GIT_SIGN_KEY_PEM:-}" ] && return 0
+  [ -n "${NEXOS_GIT_SIGN_KEY:-}" ] && [ -f "$NEXOS_GIT_SIGN_KEY" ] && return 0
+  return 1
+}
+
 ensure_state() {
   mkdir -p "$NEXOS_LOG_DIR" "$NEXOS_RUN_DIR" "$NEXOS_CONFIG_DIR" \
     "$NEXOS_USER_DATA_DIR" "$NEXOS_WORKSPACE"
@@ -48,6 +55,7 @@ start_one() {
     terminal) command -v ttyd >/dev/null 2>&1 || { echo "[entrypoint] terminal skipped (ttyd not installed)"; return 0; } ;;
     metrics)  has_callback || { echo "[entrypoint] metrics skipped (no callback configured)"; return 0; } ;;
     bridge)   : ;;
+    git-sign) has_sign_key || { echo "[entrypoint] git-sign skipped (no signing key configured)"; return 0; } ;;
   esac
   "$NEXOS_CLI" start "$name"
   echo "[entrypoint] started $name"
@@ -57,7 +65,7 @@ stop_all() {
   [ "$STOPPED" -eq 1 ] && return 0
   STOPPED=1
   echo "[entrypoint] shutting down services..."
-  for name in log-proxy editor terminal metrics bridge; do
+  for name in log-proxy editor terminal metrics bridge git-sign; do
     "$NEXOS_CLI" stop "$name" 2>/dev/null || true
   done
 }
@@ -70,8 +78,9 @@ start_one editor
 start_one terminal
 start_one metrics
 start_one bridge
+start_one git-sign
 
-echo "[entrypoint] NexOS ready — editor :${NEXOS_EDITOR_PORT}, terminal :${NEXOS_TERMINAL_PORT}, control plane :${NEXOS_LOG_PROXY_PORT}, bridge :${NEXOS_BRIDGE_PORT}"
+echo "[entrypoint] NexOS ready — editor :${NEXOS_EDITOR_PORT}, terminal :${NEXOS_TERMINAL_PORT}, control plane :${NEXOS_LOG_PROXY_PORT}, bridge :${NEXOS_BRIDGE_PORT}, git-sign :${NEXOS_GIT_SIGN_PORT}"
 
 # Sleep loop that stays interruptible by the trap above.
 while :; do

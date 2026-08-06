@@ -67,6 +67,11 @@ fi
 SIGN_URL="${NEXOS_GIT_SIGN_URL:-https://git-sign.v0.app/sign}"
 NAMESPACE_HEADER="${NEXOS_GIT_SIGN_NAMESPACE_HEADER:-x-v0-git-signing-namespace}"
 
+AUTH_HEADERS=()
+if [ -n "${NEXOS_GIT_SIGN_TOKEN:-}" ]; then
+  AUTH_HEADERS+=(--header "Authorization: Bearer ${NEXOS_GIT_SIGN_TOKEN}")
+fi
+
 curl \
   --fail \
   --silent \
@@ -75,6 +80,7 @@ curl \
   --header "content-type: application/vnd.git.ssh-signature-request" \
   --header "accept: application/vnd.git.ssh-signature" \
   --header "${NAMESPACE_HEADER}: ${namespace}" \
+  "${AUTH_HEADERS[@]}" \
   --data-binary "@${payload_file}" \
   --output "${payload_file}.sig" \
   "${SIGN_URL}"
