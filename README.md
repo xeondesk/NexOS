@@ -85,7 +85,7 @@ fails on a missing `.pnpmfile.mjs`).
 ## Tests
 
 ```sh
-npm test   # supervisor-smoke.sh + log-proxy-smoke.mjs + metrics-smoke.sh
+npm test   # supervisor + log-proxy + metrics + bridge smoke tests
 ```
 
 ## Docker

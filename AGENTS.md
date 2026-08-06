@@ -22,7 +22,7 @@ is explicitly out of scope for migration.
 
 ## Commands
 
-- Tests: `npm test` (supervisor-smoke.sh + log-proxy-smoke.mjs + metrics-smoke.sh)
+- Tests: `npm test` (supervisor + log-proxy + metrics + bridge smoke tests)
 - CLI smoke: `bin/nexos status`, `bin/nexos exec "node -v"`
 - Docker build: `docker build -t nexos .`
 - Docker run: `docker run -p 4444:4444 -p 7681:7681 -p 7682:7682 -v "$PWD/workspace:/workspace" nexos`

@@ -28,9 +28,10 @@ services:
       - NEXOS_LOG_PROXY_PORT=7682
       - NEXOS_BRIDGE_PORT=9876
       # Service gating (defaults: log-proxy on; editor/terminal on if the
-      # binary exists; metrics on if a callback URL is configured):
+      # binary exists; bridge on; metrics on if a callback URL is configured):
       # - NEXOS_ENABLE_EDITOR=true
       # - NEXOS_ENABLE_TERMINAL=true
+      # - NEXOS_ENABLE_BRIDGE=false
       # - NEXOS_ENABLE_METRICS=false
       # Callback identity (metrics + sync events):
       # - NEXOS_CALLBACK_URL=
