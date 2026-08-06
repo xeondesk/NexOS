@@ -69,6 +69,12 @@ Non-loopback requests are rejected with 403. Child processes are detached
 (own process group), write stdio to files that are tailed (single shared
 ticker), and are therefore immune to log-proxy restarts.
 
+Control-plane reachability is strict loopback-only by default (log-proxy
+returns 403 for non-loopback clients, bridge binds 127.0.0.1). When services
+are published through Docker port mapping the connection arrives from a
+non-loopback address, so set `NEXOS_ALLOW_REMOTE=true` to serve it (see the
+commented example in `docker-compose.yml`).
+
 ## Configuration
 
 Everything is overridable via `NEXOS_*` env vars (see `config/nexos.conf`):
@@ -81,6 +87,32 @@ dev-mode `images.unoptimized`, and Turbopack persistent-cache control. Point
 `NODE_OPTIONS="--import $NEXOS_ROOT/lib/register.mjs"` at the framework
 process. Registration is skipped inside pnpm processes (pnpm 11 otherwise
 fails on a missing `.pnpmfile.mjs`).
+
+## Git identity
+
+NexOS ships three git helpers under `git/`; wire them per your provider:
+
+- **GitHub (HTTPS)** — delegate to the GitHub CLI so tokens never touch disk:
+  ```
+  git config --global credential.helper ''
+  git config --global --add credential.https://github.com.helper '!gh auth git-credential'
+  ```
+- **GitHub (SSH-signed commits)** — route `ssh-keygen -Y sign` to a hosted
+  signing service so signing keys never live on the host:
+  ```
+  git config --global gpg.format ssh
+  git config --global user.signingkey <key>
+  git config --global gpg.ssh.program $NEXOS_ROOT/git/ssh-sign.sh
+  git config --global gpg.ssh.allowedSignersFile $NEXOS_ROOT/git/allowed-signers
+  git config --global commit.gpgsign true
+  ```
+  Set `NEXOS_GIT_SIGN_URL` and `NEXOS_GIT_SIGN_NAMESPACE_HEADER` to point at
+  your own signing service (defaults target the legacy v0 one).
+- **Generic (HTTPS basic auth)** — set `NEXOS_GIT_USERNAME` / `NEXOS_GIT_PASSWORD`
+  and install the helper:
+  ```
+  git config --global credential.helper $NEXOS_ROOT/git/credential-helper
+  ```
 
 ## Tests
 
@@ -126,6 +158,23 @@ service and exposes the same routes as the original editor-host API:
 Without a code-server extension host it uses filesystem-backed handlers that
 persist state under the NexOS run dir (`state/run/`): `readonly`,
 `workspace-name`, `readonly-reasons.log`, `reload-requests.log`.
+
+For **live editor coupling** (the v0 behavior — mutating the open editor
+instead of state files), run the bundled code-server extension instead of the
+standalone service (pick one; they share the bridge port):
+
+```sh
+code-server --extensions-dir $NEXOS_ROOT/bridge/editor-extension \
+  --bind-addr 0.0.0.0:${NEXOS_EDITOR_PORT} --user-data-dir ... --config ... \
+  "$NEXOS_WORKSPACE"
+```
+
+The extension (`bridge/editor-extension/extension.js`) starts the same
+`NexOSBridgeApiServer` transport with live handlers: `set-readonly` toggles
+`files.readonlyInclude` in the workspace, `reload-files` reverts matching open
+editors (or reloads the window), and `set-workspace-name` updates the
+status-bar label. It reads `NEXOS_BRIDGE_PORT` / `NEXOS_BRIDGE_HOST` /
+`NEXOS_ALLOW_REMOTE` from the code-server process environment.
 
 ## Migration
 

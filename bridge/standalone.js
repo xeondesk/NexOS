@@ -20,7 +20,8 @@ const { NexOSBridgeApiServer } = require('./bridge-api')
 // .conf file itself is shell syntax and never require()d from node code.
 const root = process.env.NEXOS_ROOT || path.join(__dirname, '..')
 const port = parseInt(process.env.NEXOS_BRIDGE_PORT || '9876', 10)
-const host = process.env.NEXOS_BRIDGE_HOST || '127.0.0.1'
+const allowRemote = (process.env.NEXOS_ALLOW_REMOTE || '') === 'true'
+const host = process.env.NEXOS_BRIDGE_HOST || (allowRemote ? '0.0.0.0' : '127.0.0.1')
 const workspace = process.env.NEXOS_WORKSPACE || path.join(root, 'workspace')
 const stateDir = process.env.NEXOS_RUN_DIR || path.join(root, 'state/run')
 fs.mkdirSync(stateDir, { recursive: true })

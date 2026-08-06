@@ -16,6 +16,14 @@ Scope note: `/vercel/share/v0-project/` is excluded by instruction.
 | 7 | `/vercel/share/v0-ttyd.sh` | `services/terminal.sh` | `-p NEXOS_TERMINAL_PORT` (7681), `-w NEXOS_WORKSPACE`. Theme/UX flags unchanged. |
 | 8 | `code-server v0-bridge` extension `api-server.js` | `bridge/bridge-api.js` | Rewritten from transpiled CJS to a clean standalone class (`NexOSBridgeApiServer`) with handler injection + `NEXOS_BRIDGE_PORT`/`NEXOS_BRIDGE_HOST`. Routes unchanged: `GET /status`, `POST /set-readonly`, `/reload-files`, `/set-workspace-name`. |
 | 8a | — | `bridge/standalone.js` | New supervised bootstrap for the bridge: instantiates the server with filesystem-backed default handlers persisting to `state/run/` (`readonly`, `workspace-name`, `readonly-reasons.log`, `reload-requests.log`). Registered as built-in service `bridge` and started by the container entrypoint. |
+| 8b | — | `bridge/editor-extension/` | New code-server extension reproducing the v0 live-editor bridge behavior: same transport, but handlers act on the open editor (`files.readonlyInclude` toggle, revert/reload of files, status-bar workspace label). Load via `code-server --extensions-dir`; use instead of the standalone bridge (they share the port). |
+
+## Reachability (new config, no v0 source)
+
+`NEXOS_ALLOW_REMOTE` (default `false`) lifts the loopback-only control-plane
+policy for Docker port publishing: `lib/log-proxy.js` skips the 403 for
+non-loopback clients and `bridge/standalone.js` / `bridge/editor-extension`
+bind `0.0.0.0`. Covered by smoke tests.
 | 9 | `/vercel/share/v0-git-ssh-sign` | `git/ssh-sign.sh` | Endpoint → `NEXOS_GIT_SIGN_URL` (default: legacy v0 signing service); namespace header name → `NEXOS_GIT_SIGN_NAMESPACE_HEADER`. Parsing/exit codes unchanged. |
 | 10 | `/vercel/share/v0-git-ssh-allowed-signers` | `git/allowed-signers` | Reference file; principal renamed to the NexOS identity. |
 | 11 | `/vercel/bin/git-credential-helper` | `git/credential-helper` | Reads `NEXOS_GIT_USERNAME/PASSWORD` (fallback `GIT_*`). |

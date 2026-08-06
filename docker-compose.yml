@@ -27,6 +27,12 @@ services:
       - NEXOS_TERMINAL_PORT=7681
       - NEXOS_LOG_PROXY_PORT=7682
       - NEXOS_BRIDGE_PORT=9876
+      # Control-plane reachability. Default (loopback-only) means the ports
+      # published above serve nothing: docker-proxy arrives from a non-loopback
+      # address and the log-proxy answers 403 / the bridge stays on 127.0.0.1.
+      # Uncomment to make the control plane reachable through the published
+      # ports (required for remote IDE hosts / proxied access):
+      # - NEXOS_ALLOW_REMOTE=true
       # Service gating (defaults: log-proxy on; editor/terminal on if the
       # binary exists; bridge on; metrics on if a callback URL is configured):
       # - NEXOS_ENABLE_EDITOR=true

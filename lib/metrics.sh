@@ -28,18 +28,19 @@ find_env_file() {
   fi
 }
 
-# Read a variable from the env file, preferring NEXOS_<name> then legacy V0_<name>.
+# Read a variable from the env file, preferring NEXOS_<name>, then each
+# additional candidate name in order (e.g. NEXOS_* per-service or legacy V0_*).
 get_var() {
-  local name="$1"
-  local legacy_name="$2"
+  local name="$1"; shift
   local env_file
   env_file=$(find_env_file)
   [ -n "$env_file" ] || return 1
-  local line
-  line=$(grep -E "^(NEXOS_${name}=|${legacy_name}=)" "$env_file" | head -1)
-  if [ -z "$line" ]; then
-    return 1
-  fi
+  local varname line
+  for varname in "NEXOS_${name}" "$@"; do
+    line=$(grep -E "^${varname}=" "$env_file" | head -1)
+    [ -n "$line" ] && break
+  done
+  [ -n "$line" ] || return 1
   line="${line#*=}"
   line="${line#\"}"; line="${line%\"}"
   line="${line#\'}"; line="${line%\'}"
@@ -47,7 +48,7 @@ get_var() {
 }
 
 get_callback_url() {
-  get_var "CALLBACK_URL" "V0_CODE_SERVER_CALLBACK_URL" || return 1
+  get_var "CALLBACK_URL" "NEXOS_CODE_SERVER_CALLBACK_URL" "V0_CODE_SERVER_CALLBACK_URL" || return 1
 }
 
 get_deployment_target() {
@@ -55,7 +56,7 @@ get_deployment_target() {
 }
 
 get_callback_token() {
-  get_var "CALLBACK_TOKEN" "V0_CODE_SERVER_CALLBACK_TOKEN" || true
+  get_var "CALLBACK_TOKEN" "NEXOS_CODE_SERVER_CALLBACK_TOKEN" "V0_CODE_SERVER_CALLBACK_TOKEN" || true
 }
 
 collect_and_send() {

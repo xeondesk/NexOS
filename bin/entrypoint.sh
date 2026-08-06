@@ -26,7 +26,7 @@ has_callback() {
   [ -n "${NEXOS_CALLBACK_URL:-}" ] && return 0
   local f="${NEXOS_ENV_FILE:-$NEXOS_ROOT/config/nexos.env}"
   [ -f "$f" ] || return 1
-  grep -qE "^(NEXOS_CALLBACK_URL|V0_CODE_SERVER_CALLBACK_URL)='?[^'[:space:]]" "$f"
+  grep -qE "^(NEXOS_CALLBACK_URL|NEXOS_CODE_SERVER_CALLBACK_URL|V0_CODE_SERVER_CALLBACK_URL)='?[^'[:space:]]" "$f"
 }
 
 ensure_state() {

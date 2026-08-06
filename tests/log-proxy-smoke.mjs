@@ -1,5 +1,6 @@
 // Log-proxy smoke test: health, exec (wait), history, exec streaming, 403 guard.
 import { spawn } from 'child_process'
+import os from 'os'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -102,6 +103,50 @@ async function main() {
 
   const notFound = await fetch(`${BASE}/nope`)
   check('unknown route returns 404', notFound.status === 404)
+
+  // --- remote reachability (NEXOS_ALLOW_REMOTE) ---
+  const remoteIP = Object.values(os.networkInterfaces())
+    .flat()
+    .find((i) => i && i.family === 'IPv4' && !i.internal)?.address
+
+  if (remoteIP) {
+    const forbidden = await fetch(`http://${remoteIP}:${PORT}/health`)
+    check('non-loopback blocked with 403 by default', forbidden.status === 403)
+
+    const PORT2 = PORT + 1
+    const proxy2 = spawn(
+      process.execPath,
+      [path.join(NEXOS_ROOT, 'lib', 'log-proxy.js')],
+      {
+        cwd: NEXOS_ROOT,
+        env: {
+          ...process.env,
+          NEXOS_LOG_PROXY_PORT: String(PORT2),
+          NEXOS_ALLOW_REMOTE: 'true',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    )
+    proxy2.stderr.on('data', (d) => process.stderr.write(`[proxy2:err] ${d}`))
+    let remoteOk = false
+    for (let i = 0; i < 50; i++) {
+      try {
+        const res = await fetch(`http://${remoteIP}:${PORT2}/health`)
+        if (res.ok) {
+          remoteOk = true
+          break
+        }
+      } catch {}
+      await sleep(100)
+    }
+    check('NEXOS_ALLOW_REMOTE=true serves non-loopback', remoteOk)
+    proxy2.kill('SIGTERM')
+    const killTimer = setTimeout(() => proxy2.kill('SIGKILL'), 3000)
+    killTimer.unref()
+    await new Promise((r) => proxy2.once('exit', r))
+  } else {
+    console.log('skipped: no non-loopback interface for remote-reachability check')
+  }
 
   await stopProxy()
   if (failures === 0) console.log('log-proxy-smoke: PASS')

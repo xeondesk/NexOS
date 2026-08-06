@@ -68,6 +68,26 @@ check "malformed JSON returns 400" \
 check "readonly requires boolean" \
   [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"readonly":"yes"}' "$BASE/set-readonly")" = "400" ]
 
+# --- remote reachability (NEXOS_ALLOW_REMOTE) --------------------------------
+REMOTE_IP=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+if [ -n "$REMOTE_IP" ]; then
+  # default: bridge binds 127.0.0.1, so the interface IP gets no 200
+  check "bridge default is loopback-only" \
+    [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 "http://$REMOTE_IP:$PORT/status" 2>/dev/null || true)" != "200" ]
+  # with NEXOS_ALLOW_REMOTE=true: binds 0.0.0.0 and answers on the interface IP
+  PORT2=$((PORT + 1))
+  NEXOS_BRIDGE_PORT="$PORT2" NEXOS_ALLOW_REMOTE=true \
+    node "$NEXOS_ROOT/bridge/standalone.js" >"$TMP/bridge2.log" 2>&1 &
+  BRIDGE2=$!
+  sleep 1
+  check "bridge NEXOS_ALLOW_REMOTE serves interface IP" \
+    [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 "http://$REMOTE_IP:$PORT2/status" 2>/dev/null)" = "200" ]
+  kill "$BRIDGE2" 2>/dev/null
+  wait "$BRIDGE2" 2>/dev/null
+else
+  echo "skipped: no non-loopback interface for remote-reachability check"
+fi
+
 kill "$BRIDGE" 2>/dev/null
 wait "$BRIDGE" 2>/dev/null
 
