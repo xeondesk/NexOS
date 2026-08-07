@@ -119,6 +119,10 @@ host bootstrap.
    production **API v2** surface under `/v2`: the route table is derived from the
    spec (all 41 operations), with contract validation, `{message}` errors, and
    `NEXOS_API_TOKEN` bearer/loopback auth. Phase 0 = routing/auth/validation
-   skeleton (unimplemented ops return 501). Streaming wire format (jsondiffpatch
-   deltas), chat/message CRUD, previews, MCP servers and webhooks land in later
-   phases — plan in `analysis/v0-sdk-analysis.md`.
+   skeleton (unimplemented ops return 501). Phase 1 = streaming: `chats.createStream`,
+   `messages.sendStream`, `chats.resume` emit the raw `ChatStreamEvent`/
+   `MessageStreamEvent` SSE wire format (jsondiffpatch + v0 append deltas) from a
+   deterministic mock backend (`api/lib/{stream-handlers,mock-generator,chat-store}.mjs`),
+   round-trip verified against the real `v0` SDK. Chat/message CRUD + persistence,
+   previews, MCP servers and webhooks land in later phases — plan in
+   `analysis/v0-sdk-analysis.md`.

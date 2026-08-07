@@ -132,10 +132,14 @@ chats, messages, MCP servers, previews, webhooks) can never drift from the
 contract. Connect the real SDK with `createV0Client({ baseUrl:
 'http://127.0.0.1:8081/v2', auth })`.
 
-This is a phased effort: Phase 0 ships the routing/auth/validation skeleton
-(known operations dispatch and validate, unimplemented handlers return `501`),
-with the streaming wire format, chat/message CRUD, previews, MCP servers and
-webhooks landing in later phases (see `analysis/v0-sdk-analysis.md`).
+This is a phased effort: Phase 0 shipped the routing/auth/validation skeleton
+(known operations dispatch and validate, unimplemented handlers return `501`);
+Phase 1 makes streaming live — `chats.createStream`, `messages.sendStream` and
+`chats.resume` emit the raw `ChatStreamEvent`/`MessageStreamEvent` SSE wire
+format on a deterministic mock backend (title + parts-chunk deltas + usage +
+closing snapshot), verified end-to-end against the real `v0` SDK
+(`tests/api-stream-sdk.mjs`). Chat/message CRUD + persistence, previews, MCP
+servers and webhooks land in later phases (see `analysis/v0-sdk-analysis.md`).
 
 Auth mirrors the portal: loopback always trusted, `NEXOS_API_TOKEN` required as
 `Authorization: Bearer <token>` from non-loopback clients (which is exactly how

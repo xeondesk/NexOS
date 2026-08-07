@@ -126,7 +126,16 @@ install the compose file / README port mapping applies as written.
   ambiguity, don't "fix" it. Errors use the v2 `Error` shape `{message}`; known
   but unimplemented operations return `501 {"message":"not_implemented:<op>"}`.
   Auth mirrors the portal: loopback trusted, `NEXOS_API_TOKEN` bearer for remote.
-  This is Phase 0 — streaming/CRUD/preview/MCP/webhooks come later
+  This is Phase 1 — streaming is live: `chats.createStream`, `messages.sendStream`
+  and `chats.resume` emit the raw `ChatStreamEvent`/`MessageStreamEvent` wire
+  format on a deterministic mock backend (`api/lib/{stream-handlers,mock-generator,chat-store}.mjs`),
+  consumed end-to-end by the real `v0` npm SDK in `tests/api-stream-sdk.mjs`
+  (devDependency only). `api/lib/diffpatch.mjs` + `api/lib/v0-stream.mjs` are
+  ports of the SDK's `stream/{diffpatch,result}.ts` — the v0 append fast-path
+  `[[idx,...,suffix],9,9]` only fires for array-item-level string appends
+  (integer-only paths); `parts[i].text` growth travels as plain jsondiffpatch
+  deltas. Everything else (CRUD/persistence, from-files/repo, previews, MCP,
+  webhooks) still returns 501 per the phased plan
   (`analysis/v0-sdk-analysis.md`).
 
 ## Verification flow

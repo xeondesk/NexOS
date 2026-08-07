@@ -1,13 +1,15 @@
-// NexOS v0-compatible API gateway (Phase 0 skeleton).
+// NexOS v0-compatible API gateway (Phase 1: streaming wire format).
 //
 // Implements the v0.app production API v2 contract served at
 // https://api.v0.dev/v2. The route table is derived at startup from
 // `api/openapi-v2.json` (a copy of vercel/v0-sdk's openapi.json, Apache-2.0,
 // https://github.com/vercel/v0-sdk) so the mounted surface can never drift
-// from the spec. Phase 0 = routing + auth + validation skeleton: every
-// operation is registered and dispatchable, but returns 501 until the phased
-// plan implements it (streaming wire format first, then chat/message CRUD,
-// previews, MCP servers, webhooks).
+// from the spec. Phase 1 implements the streaming operations
+// (`chats.createStream`, `messages.sendStream`, `chats.resume`) on a
+// deterministic mock backend, emitting the raw ChatStreamEvent /
+// MessageStreamEvent wire format the SDK client folds via applyStreamEvent.
+// Remaining operations return 501 until the phased plan implements them
+// (chat/message CRUD next, then previews, MCP servers, webhooks).
 //
 // Base URL: the API is served under `/v2` (matching api.v0.dev/v2). The SDK
 // client connects with `createV0Client({ baseUrl: 'http://127.0.0.1:<port>/v2' })`.
@@ -28,6 +30,7 @@ import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import * as streamHandlers from './lib/stream-handlers.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..')
@@ -105,8 +108,10 @@ function matchRoute(method, pathname) {
 
 const REQUIRED_FIELDS = {
   'chats.create': ['message'],
+  'chats.createStream': ['message'],
   'chats.createFromRepo': ['repo'],
   'messages.send': ['message'],
+  'messages.sendStream': ['message'],
   'mcpServers.create': ['name', 'url'],
   'webhooks.create': ['name', 'events', 'url'],
 }
@@ -176,7 +181,7 @@ function sendJson(res, statusCode, data, extraHeaders = {}) {
     'X-Content-Type-Options': 'nosniff',
     ...extraHeaders,
   })
-  res.end(JSON.stringify(data))
+  res.end(data === undefined || data === null ? undefined : JSON.stringify(data))
 }
 
 function parseJsonBody(req) {
@@ -201,8 +206,16 @@ function parseJsonBody(req) {
   })
 }
 
-/** Phase 0 default handler: the operation is known but not yet implemented. */
+/** Dispatches implemented operations; unimplemented ones return 501. */
+const STREAM_OPS = {
+  'chats.createStream': streamHandlers.chatsCreateStream,
+  'messages.sendStream': streamHandlers.messagesSendStream,
+  'chats.resume': streamHandlers.chatsResume,
+}
+
 function handleOperation({ route, params, body }) {
+  const op = STREAM_OPS[route.operationId]
+  if (op) return op({ params, body })
   return {
     status: 501,
     json: { message: `not_implemented:${route.operationId}` },
@@ -261,6 +274,10 @@ async function handle(req, res) {
       return
     }
     const result = handleOperation({ route: match.route, params: match.params, body })
+    if (typeof result.stream === 'function') {
+      await result.stream(res)
+      return
+    }
     sendJson(res, result.status, result.json)
     return
   }

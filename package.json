@@ -9,12 +9,16 @@
     "nexos": "./bin/nexos"
   },
   "scripts": {
-    "test": "bash tests/supervisor-smoke.sh && node tests/log-proxy-smoke.mjs && bash tests/metrics-smoke.sh && bash tests/bridge-smoke.sh && node tests/editor-extension-smoke.mjs && bash tests/vsix-smoke.sh && bash tests/sign-server-smoke.sh && bash tests/web-smoke.sh && bash tests/api-smoke.sh"
+    "test": "bash tests/supervisor-smoke.sh && node tests/log-proxy-smoke.mjs && bash tests/metrics-smoke.sh && bash tests/bridge-smoke.sh && node tests/editor-extension-smoke.mjs && bash tests/vsix-smoke.sh && bash tests/sign-server-smoke.sh && bash tests/web-smoke.sh && bash tests/api-smoke.sh && bash tests/api-stream-smoke.sh"
   },
   "dependencies": {
+    "jsondiffpatch": "^0.7.6",
     "ws": "^8.19.0"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "v0": "^3.0.3"
   }
 }

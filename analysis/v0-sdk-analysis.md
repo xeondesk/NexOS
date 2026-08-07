@@ -147,23 +147,25 @@ API layer.
 
 Phased development plan. Each phase is independently shippable + testable.
 
-### Phase 0 — contract + scaffolding
-- [ ] Copy `openapi.json` → `api/openapi-v2.json` (Apache-2.0 attribution).
-- [ ] `api/` service skeleton supervised like others: `api-server.mjs`
+### Phase 0 — contract + scaffolding ✅ (commit `1857c79`)
+- [x] Copy `openapi.json` → `api/openapi-v2.json` (Apache-2.0 attribution).
+- [x] `api/` service skeleton supervised like others: `api-server.mjs`
   (node:http, no framework), routes matching the v2 paths, bearer auth via
   `NEXOS_API_TOKEN` + loopback-trust (reuse the web-portal auth model).
 - [ ] Generated types: run `openapi-ts` in a scratch dir, vendor
   `types.gen.ts` into `api/types.mjs`-importable form (or keep TS + build).
 
-### Phase 1 — streaming wire format (highest-value reuse)
-- [ ] Port `diffpatch.mjs` (jsondiffpatch + `[9,9]` append delta) + unit tests
-      mirroring upstream (`chunks.test.ts` semantics).
-- [ ] Port `v0-stream.mjs`: `formatSse`, SSE parse, `SharedV0StreamResult`.
-- [ ] Wire `/chats/stream` + `/chats/{id}/messages/stream` to emit real events
-      (`chat`, `chat.title`, `message`, `message.parts.chunk`, `message.usage`,
-      `error`, `done`) against local in-memory chat/message state.
-- [ ] Verify with the real SDK: `createV0Client({baseUrl:http://127.0.0.1:PORT/v2})`
-      + `readV0Stream` round-trip, and `bun test`-style fixture parity.
+### Phase 1 — streaming wire format ✅ (in-progress)
+- [x] Port `diffpatch.mjs` (jsondiffpatch + `[9,9]` append delta) + unit tests.
+- [x] Port `v0-stream.mjs`: `formatSse`, SSE parse, `SharedV0StreamResult`,
+  `applyStreamEvent`, `createV0StreamResult`/`readV0Stream`.
+- [x] Wire `/chats/stream` + `/chats/{id}/messages/stream` + `/chats/{id}/resume`
+  to emit real events (`chat`, `chat.title`, `message`, `message.parts.chunk`,
+  `message.usage`, `error`) against local in-memory chat/message state.
+- [x] Verify with the real SDK: `createV0Client({baseUrl:http://127.0.0.1:PORT/v2})`
+  round-trip (`tests/api-stream-sdk.mjs`) + offline fixture tests
+  (`tests/api-stream-unit.mjs`).
+- [ ] `messages.resolveStream` + restartable stream persistence (Phase 2 store).
 
 ### Phase 2 — chat/message CRUD + persistence
 - [ ] Chats: create/list/get/update/delete/duplicate; Messages:

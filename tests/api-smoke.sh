@@ -51,8 +51,10 @@ check "GET /v2/chats/{id} routes to chats.get (501)" \
   [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v2/chats/chat_abc")" = "501" ]
 check "deep param route messages.stop matches (501)" \
   [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/v2/chats/chat_abc/messages/msg_1/stop")" = "501" ]
-check "POST /v2/chats/stream routes to chats.createStream (501)" \
-  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"message":"hi"}' "$BASE/v2/chats/stream")" = "501" ]
+check "POST /v2/chats/stream now implements chats.createStream (200 SSE)" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"message":"hi"}' "$BASE/v2/chats/stream")" = "200" ]
+check "POST /v2/chats/stream emits SSE" \
+  sh -c "curl -s -X POST -H 'Content-Type: application/json' -d '{\"message\":\"hi\"}' '$BASE/v2/chats/stream' | grep -q 'event: update'"
 check "GET /v2/chats/{id}/preview routes to chats.getPreview (501)" \
   [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v2/chats/chat_abc/preview")" = "501" ]
 check "GET /v2/mcp-servers routes to mcpServers.list (501)" \
