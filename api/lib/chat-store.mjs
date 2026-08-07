@@ -213,6 +213,16 @@ export function updateChat(chatId, { title, privacy, metadata } = {}) {
   return chat
 }
 
+/** Links a local Vercel-equivalent project to a chat (persisted). */
+export function linkProject(chatId, projectId) {
+  const chat = chats.get(chatId)
+  if (!chat) return null
+  chat.vercelProjectId = projectId
+  chat.updatedAt = nowIso()
+  persist(chatId)
+  return chat
+}
+
 export function deleteChat(chatId) {
   if (!chats.has(chatId)) return false
   chats.delete(chatId)

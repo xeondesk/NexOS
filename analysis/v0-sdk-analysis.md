@@ -211,7 +211,13 @@ Phased development plan. Each phase is independently shippable + testable.
       in `api-crud-smoke.sh` (+7) and `api-stream-smoke.sh` / `api-stream-sdk.mjs`
       (+6 real-SDK checks, incl. the hey-api `{data,...}` envelope + flat
       `{chatId, task}` params for the non-stream variant).
-- [ ] `deploy`, `createVercelProject` still 501 (Vercel-locked, deferred).
+- [x] `chats.createVercelProject` + `chats.deploy` — local equivalents (the
+      "replace with local equivalents" path): `projects.json`/`deployments.json`
+      collections, `store.linkProject` sets `chat.vercelProjectId` (surfaced by
+      chats.list/get), deploy auto-creates a project when unlinked and returns
+      `{deploymentId, vercelProjectId}` with `url` pointing at the preview
+      ingress (`NEXOS_PREVIEW_URL`). Every openapi-v2.json operation is now
+      implemented (no 501s); covered in `api-crud-smoke.sh` (+8).
 
 ### Phase 4 — React/SDK client compatibility
 - [ ] Run `@v0-sdk/react` `V0Transport` against local proxy routes; ship the
@@ -228,8 +234,11 @@ Phased development plan. Each phase is independently shippable + testable.
 - [x] Commit each phase separately, same style as prior work.
 
 ### Deferred / explicitly out of scope
-- Vercel-only ops (`deploy`, `createVercelProject`, Vercel Connect) — replace
-  with local equivalents or gate behind `NEXOS_ENABLE_API_VERCEL_*`.
+- Vercel Connect setup — only the status poll (`chats.getConnectStatus`) is
+  reachable; the OAuth/connector handshake is out of scope (a seeded
+  `state/api/connectors.json` drives the status transition). `deploy` and
+  `createVercelProject` ship as local equivalents (see Phase 3) rather than
+  real Vercel deployments.
 - `@vercel/oidc` auth — replaced by `NEXOS_API_TOKEN` bearer.
 - Model generation itself (v0-pro etc.) — needs an LLM backend; the API gateway
   contract can be implemented with a mock/echo stream for test parity.

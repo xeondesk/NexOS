@@ -182,8 +182,15 @@ install the compose file / README port mapping applies as written.
   → closing snapshot) and fires the `message.finished` webhook. The real SDK
   `client.messages.resolve` returns hey-api `{data,error,request,response}`
   and takes a flat `{chatId, task, modelConfiguration}` params object (NOT
-  positional args). Still 501 per the phased plan
-  (`analysis/v0-sdk-analysis.md`): `deploy`, `createVercelProject`.
+  positional args). The final Vercel-only ops `chats.createVercelProject`
+  (201 `{vercelProjectId}`) and `chats.deploy` (200
+  `{deploymentId, vercelProjectId}`) have local equivalents: `projects.json`
+  / `deployments.json` collections via `openCollection`, the chat is linked
+  through `store.linkProject` (`chat.vercelProjectId`, listed/filtered by
+  `chats.list`), deploy auto-creates a project when the chat has none and its
+  `url` resolves to the preview ingress (`NEXOS_PREVIEW_URL`, default
+  `http://127.0.0.1:8082/<chatId>`). Every operation in openapi-v2.json is
+  now implemented (no 501s).
 
 ## Verification flow
 

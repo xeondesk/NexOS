@@ -329,3 +329,71 @@ export function chatsGetConnectStatus({ params, query }) {
   }
   return { status: 200, json: { status: 'error', message: 'vercel_connect_not_configured' } }
 }
+
+// ---------------------------------------------------------------------------
+// Local Vercel-project + deploy equivalents
+// ---------------------------------------------------------------------------
+//
+// `chats.createVercelProject` and `chats.deploy` are Vercel-only in the v0
+// contract. NexOS replaces them with persisted local records: a project is
+// linked to a chat (`chat.vercelProjectId`, surfaced by chats.list/get) and a
+// deployment resolves to a stable URL served by the preview ingress.
+
+const PREVIEW_PORT = parseInt(process.env.NEXOS_PREVIEW_PORT || '8082', 10)
+const PREVIEW_BASE = process.env.NEXOS_PREVIEW_URL || `http://127.0.0.1:${PREVIEW_PORT}`
+
+function projectsCollection() {
+  return openCollection(store.stateDirPath(), 'projects')
+}
+
+function deploymentsCollection() {
+  return openCollection(store.stateDirPath(), 'deployments')
+}
+
+function ensureProject(chat) {
+  if (chat.vercelProjectId) {
+    return { projectId: chat.vercelProjectId, created: false }
+  }
+  const collection = projectsCollection()
+  const project = collection.create({
+    id: store.newId('prj'),
+    name: chat.title || `Chat ${chat.id}`,
+    chatId: chat.id,
+    createdAt: new Date().toISOString(),
+  })
+  store.linkProject(chat.id, project.id)
+  return { projectId: project.id, created: true }
+}
+
+export function chatsCreateVercelProject({ params, body }) {
+  const chat = store.getChat(params.chatId)
+  if (!chat) return { status: 404, json: { message: 'chat_not_found' } }
+  const { name } = body
+  if (name !== undefined && (typeof name !== 'string' || name.length < 1)) {
+    return { status: 422, json: { message: 'name must be a non-empty string' } }
+  }
+  const collection = projectsCollection()
+  const project = collection.create({
+    id: store.newId('prj'),
+    name: name || chat.title || `Chat ${chat.id}`,
+    chatId: chat.id,
+    createdAt: new Date().toISOString(),
+  })
+  store.linkProject(chat.id, project.id)
+  return { status: 201, json: { vercelProjectId: project.id } }
+}
+
+export function chatsDeploy({ params }) {
+  const chat = store.getChat(params.chatId)
+  if (!chat) return { status: 404, json: { message: 'chat_not_found' } }
+  const { projectId } = ensureProject(chat)
+  const deployment = deploymentsCollection().create({
+    id: store.newId('dpl'),
+    projectId,
+    chatId: chat.id,
+    status: 'ready',
+    url: `${PREVIEW_BASE}/${chat.id}`,
+    createdAt: new Date().toISOString(),
+  })
+  return { status: 200, json: { deploymentId: deployment.id, vercelProjectId: projectId } }
+}

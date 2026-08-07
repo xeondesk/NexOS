@@ -10,8 +10,8 @@
 // persisted atomically under NEXOS_API_STATE_DIR. Phase 3 adds chat previews
 // (signed URL + origin-isolated ingress port of the SDK preview-proxy),
 // mcp-servers CRUD, webhooks CRUD + delivery loop, and preview-hosts settings.
-// Remaining operations return 501 until the phased plan implements them
-// (downloadFiles, connect/deploy, messages.resolve*, Vercel-only ops).
+// The resolve family and local Vercel-project/deploy equivalents close out the
+// whole spec — every operation in openapi-v2.json is implemented.
 //
 // Base URL: the API is served under `/v2` (matching api.v0.dev/v2). The SDK
 // client connects with `createV0Client({ baseUrl: 'http://127.0.0.1:<port>/v2' })`.
@@ -296,6 +296,8 @@ const JSON_OPS = {
   'chats.updateFiles': chatHandlers.chatsUpdateFiles,
   'chats.downloadFiles': chatHandlers.chatsDownloadFiles,
   'chats.getConnectStatus': chatHandlers.chatsGetConnectStatus,
+  'chats.createVercelProject': chatHandlers.chatsCreateVercelProject,
+  'chats.deploy': chatHandlers.chatsDeploy,
   'chats.getPreview': metaHandlers.chatsGetPreview,
   'messages.list': chatHandlers.messagesList,
   'messages.send': chatHandlers.messagesSend,

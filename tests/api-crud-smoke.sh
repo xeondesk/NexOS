@@ -195,6 +195,24 @@ check "chats.getConnectStatus returns ready when seeded" \
 check "chats.getConnectStatus ready includes the connector" \
   sh -c "curl -s '$BASE/chats/$CID/connect/status?requestId=req-ready' | grep -q '\"attachedToProject\":true'"
 
+# --- local Vercel project + deploy ----------------------------------------
+check "chats.createVercelProject returns 201 {vercelProjectId}" \
+  sh -c "curl -s -X POST -H 'Content-Type: application/json' -d '{\"name\":\"nexos-demo\"}' '$BASE/chats/$CID/vercel-project' | grep -q '\"vercelProjectId\":\"prj'"
+PRJ=$(curl -s -X POST -H 'Content-Type: application/json' -d '{"name":"nexos-demo"}' "$BASE/chats/$CID/vercel-project" | J "d['vercelProjectId']")
+check "chats.createVercelProject assigns a prj id" [ "${PRJ#prj}" != "$PRJ" ]
+check "chats.createVercelProject links the chat" \
+  sh -c "curl -s '$BASE/chats/$CID' | grep -q '\"vercelProjectId\":\"$PRJ\"'"
+check "chats.createVercelProject rejects an empty name -> 422" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"name":""}' "$BASE/chats/$CID/vercel-project")" = "422" ]
+check "chats.createVercelProject unknown chat -> 404" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' "$BASE/chats/chat_nope/vercel-project")" = "404" ]
+check "chats.deploy returns deploymentId + vercelProjectId" \
+  sh -c "curl -s -X POST '$BASE/chats/$CID/deploy' | grep -q '\"deploymentId\":\"dpl'"
+check "chats.deploy reuses the linked project" \
+  sh -c "curl -s -X POST '$BASE/chats/$CID/deploy' | grep -q '\"vercelProjectId\":\"$PRJ\"'"
+check "chats.deploy unknown chat -> 404" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/chats/chat_nope/deploy")" = "404" ]
+
 # --- persistence across restart -------------------------------------------
 kill "$API" 2>/dev/null
 wait "$API" 2>/dev/null
@@ -203,6 +221,9 @@ start_api
 
 check "chats survive a service restart (persisted state)" \
   sh -c "curl -s '$BASE/chats?limit=100' | grep -q '\"title\":\"Second chat\"'"
+
+check "chat project link survives a service restart" \
+  sh -c "curl -s -X POST '$BASE/chats/$CID/deploy' | grep -q '\"vercelProjectId\":\"$PRJ\"'"
 
 if [ "$FAIL" -eq 0 ]; then
   echo "api-crud-smoke: PASS"
