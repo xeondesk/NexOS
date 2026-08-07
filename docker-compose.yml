@@ -6,6 +6,7 @@
 #   open http://localhost:8080   (web portal dashboard)
 #   curl  http://localhost:7682/health   (control plane)
 #   curl  http://localhost:8081/health   (v2 API gateway)
+#   open  http://localhost:8082/         (preview ingress, chats.getPreview)
 
 services:
   nexos:
@@ -21,6 +22,7 @@ services:
       - "9876:9876"   # bridge API (localhost-only by default)
       - "8080:8080"   # web portal dashboard
       - "8081:8081"   # v2 API gateway (SDK baseUrl: http://host:8081/v2)
+      - "8082:8082"   # preview ingress (chats.getPreview URLs)
     volumes:
       - ./workspace:/workspace            # your code lives here
       - nexos-state:/opt/nexos/state      # logs, pidfiles, editor config
@@ -33,6 +35,7 @@ services:
       - NEXOS_BRIDGE_PORT=9876
       - NEXOS_WEB_PORT=8080
       - NEXOS_API_PORT=8081
+      - NEXOS_PREVIEW_PORT=8082
       # Auth for the web portal. Loopback is always trusted; set a token to
       # gate non-loopback dashboard requests (login screen / bearer header):
       # - NEXOS_WEB_TOKEN=changeme
@@ -40,7 +43,9 @@ services:
       # published above serve nothing: docker-proxy arrives from a non-loopback
       # address and the log-proxy answers 403 / the bridge stays on 127.0.0.1.
       # Uncomment to make the control plane reachable through the published
-      # ports (required for remote IDE hosts / proxied access):
+      # ports (required for remote IDE hosts / proxied access). Also flips the
+      # v2 API gateway + preview ingress to bind 0.0.0.0 (set
+      # NEXOS_PREVIEW_HOST to the reachable host so getPreview URLs work):
       # - NEXOS_ALLOW_REMOTE=true
       # When remote access is on, require a bearer token for the control
       # plane (loopback stays token-free):

@@ -200,11 +200,13 @@ Phased development plan. Each phase is independently shippable + testable.
 - [ ] `ai-tools` parity only if a self-hosted model backend exists (out of scope
       until then).
 
-### Phase 5 — docker + docs
-- [ ] `api` added to `bin/entrypoint.sh`, Dockerfile EXPOSE, compose ports.
-- [ ] `npm test` suite (`api-stream-smoke.sh` incl. real-SDK round trip);
-      update README/COMPONENT-MAP/AGENTS.
-- [ ] Commit each phase separately, same style as prior work.
+### Phase 5 — docker + docs ✅
+- [x] `api` added to `bin/entrypoint.sh`, Dockerfile EXPOSE, compose ports
+      (8081) + preview ingress (8082) in EXPOSE/compose/banner; compose
+      documents `NEXOS_ALLOW_REMOTE` flipping the gateway + preview bind.
+- [x] `npm test` suite (16 suites incl. real-SDK round trip, CRUD, meta,
+      preview); README/COMPONENT-MAP/AGENTS updated.
+- [x] Commit each phase separately, same style as prior work.
 
 ### Deferred / explicitly out of scope
 - Vercel-only ops (`deploy`, `createVercelProject`, Vercel Connect) — replace

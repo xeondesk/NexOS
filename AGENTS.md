@@ -167,6 +167,11 @@ install the compose file / README port mapping applies as written.
    `/execute` + `/history`, then `docker stop` and confirm the entrypoint
    "shutting down services..." path with no leaked supervisors on the host.
    `tests/web-smoke.sh` exercises the web layer outside Docker; the container
-   runtime check curls `/health`, the dashboard, `/api/v1/exec` round-trip and
-   `/api/v1/git-sign` on the mapped ports, then `docker rm -f` the container and
-   confirm no leaked listeners on the host.
+   runtime check curls `/health`, the dashboard, `/api/v1/exec` round-trip,
+   `/api/v1/git-sign` on the mapped ports, and the v2 E2E (create a
+   from-files chat → `chats.getPreview` → load the token URL through the
+   preview ingress → 200, bad token → 403), then `docker rm -f` the container
+   and confirm no leaked listeners on the host. Note the sandbox's host v0
+   services already own 4444/7681/7682/9876 — the container's editor/terminal/
+   log-proxy/bridge collide and fail to bind here; the api/web/preview
+   (8080/8081/8082) are the reachable ones.
