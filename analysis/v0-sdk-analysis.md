@@ -167,7 +167,7 @@ Phased development plan. Each phase is independently shippable + testable.
   (`tests/api-stream-unit.mjs`).
 - [ ] `messages.resolveStream` + restartable stream persistence (Phase 2 store).
 
-### Phase 2 — chat/message CRUD + persistence ✅ (commit `…`)
+### Phase 2 — chat/message CRUD + persistence ✅ (commit `d60cdfb`)
 - [x] Chats: create/list/get/update/delete/duplicate; Messages:
       list/send/get/stop; restore-message. Persist to `state/api/` (JSON + atomic
       writes, reuse web-portal settings write pattern).
