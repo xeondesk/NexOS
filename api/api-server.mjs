@@ -141,6 +141,7 @@ const REQUIRED_FIELDS = {
 
 const REQUIRED_QUERY = {
   'messages.list': ['limit'],
+  'chats.getConnectStatus': ['requestId'],
 }
 
 const NESTED_REQUIRED_FIELDS = {
@@ -289,6 +290,8 @@ const JSON_OPS = {
   'chats.createFromRepo': chatHandlers.chatsCreateFromRepo,
   'chats.getFiles': chatHandlers.chatsGetFiles,
   'chats.updateFiles': chatHandlers.chatsUpdateFiles,
+  'chats.downloadFiles': chatHandlers.chatsDownloadFiles,
+  'chats.getConnectStatus': chatHandlers.chatsGetConnectStatus,
   'chats.getPreview': metaHandlers.chatsGetPreview,
   'messages.list': chatHandlers.messagesList,
   'messages.send': chatHandlers.messagesSend,

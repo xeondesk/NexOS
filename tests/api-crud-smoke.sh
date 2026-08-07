@@ -149,6 +149,36 @@ check "from-repo skips vendored files" \
 check "createFromRepo without repo.url -> 422" \
   [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"repo":{}}' "$BASE/chats/from-repo")" = "422" ]
 
+# --- downloadFiles + getConnectStatus ---------------------------------------
+DL="$TMP/download.zip"
+curl -s -D "$TMP/dl-headers.txt" -o "$DL" "$BASE/chats/$ZID/files/download"
+check "chats.downloadFiles returns application/zip" \
+  sh -c "grep -qi 'content-type: application/zip' '$TMP/dl-headers.txt'"
+check "chats.downloadFiles archives the chat files" \
+  sh -c "unzip -Z1 '$DL' | grep -q 'src/styles.css'"
+check "chats.downloadFiles unknown chat -> 404" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/chats/chat_nope/files/download")" = "404" ]
+
+check "chats.updateFiles stores a base64 file" \
+  sh -c "curl -s -X PATCH -H 'Content-Type: application/json' -d '{\"files\":[{\"path\":\"blob.bin\",\"content\":\"AQIDBAU=\",\"encoding\":\"base64\"}]}' '$BASE/chats/$FF_ID/files' | grep -q '\"path\":\"blob.bin\"'"
+BINDL="$TMP/blob-download.zip"
+curl -s -o "$BINDL" "$BASE/chats/$FF_ID/files/download"
+check "chats.downloadFiles preserves base64 content" \
+  sh -c "unzip -p '$BINDL' blob.bin | od -An -tu1 | tr -d ' \n' | grep -q '12345'"
+
+check "chats.getConnectStatus unknown chat -> 404" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/chats/chat_nope/connect/status?requestId=r1")" = "404" ]
+check "chats.getConnectStatus requires requestId -> 422" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/chats/$CID/connect/status")" = "422" ]
+check "chats.getConnectStatus reports not configured" \
+  sh -c "curl -s '$BASE/chats/$CID/connect/status?requestId=r1' | grep -q '\"status\":\"error\"'"
+printf '{"req-ready":{"id":"req-ready","status":"ready","connector":{"id":"conn","name":"Local Connect","type":"local","attachedToProject":true}}}\n' \
+  >"$TMP/api/connectors.json"
+check "chats.getConnectStatus returns ready when seeded" \
+  sh -c "curl -s '$BASE/chats/$CID/connect/status?requestId=req-ready' | grep -q '\"status\":\"ready\"'"
+check "chats.getConnectStatus ready includes the connector" \
+  sh -c "curl -s '$BASE/chats/$CID/connect/status?requestId=req-ready' | grep -q '\"attachedToProject\":true'"
+
 # --- persistence across restart -------------------------------------------
 kill "$API" 2>/dev/null
 wait "$API" 2>/dev/null

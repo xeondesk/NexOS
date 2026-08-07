@@ -191,8 +191,14 @@ Phased development plan. Each phase is independently shippable + testable.
 - [x] Verified: `tests/api-meta-smoke.sh` (27 checks) + `tests/api-preview-smoke.sh`
       (15 checks) + ingress unit coverage in `tests/api-preview-smoke.sh`; full
       `npm test` green.
-- [ ] `getConnectStatus`, `downloadFiles` (`GET /chats/{chatId}/files/download`),
-      `deploy`, `createVercelProject`, `messages.resolve*` (stream) still 501.
+- [x] `chats.downloadFiles` (`GET /chats/{chatId}/files/download`) streams a
+      dependency-free stored ZIP of the chat's ingested files
+      (`api/lib/zip.mjs`, UTF-8 flag + POSIX modes, base64/utf8 content), and
+      `chats.getConnectStatus` polls persisted connector state
+      (`state/api/connectors.json`, seeded by requestId) returning the spec'd
+      `pending`/`ready`/`error` oneOf — default `error:
+      vercel_connect_not_configured` when unset. Covered in `api-crud-smoke.sh`.
+- [ ] `deploy`, `createVercelProject`, `messages.resolve*` (stream) still 501.
 
 ### Phase 4 — React/SDK client compatibility
 - [ ] Run `@v0-sdk/react` `V0Transport` against local proxy routes; ship the

@@ -8,6 +8,8 @@
 import * as store from './chat-store.mjs'
 import { mockResponse } from './mock-generator.mjs'
 import { extractZip, extractRepo, toFilesRecord } from './from.mjs'
+import { openCollection } from './meta-store.mjs'
+import { buildZip } from './zip.mjs'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -188,6 +190,26 @@ export function chatsUpdateFiles({ params, body }) {
   return { status: 200, json: store.getFiles(params.chatId) }
 }
 
+export function chatsDownloadFiles({ params }) {
+  const chat = store.getChat(params.chatId)
+  if (!chat) return { status: 404, json: { message: 'chat_not_found' } }
+  const files = store.getFiles(params.chatId).files || []
+  const archive = buildZip(files)
+  return {
+    status: 200,
+    stream: (res) => {
+      res.writeHead(200, {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': `attachment; filename="${params.chatId}.zip"`,
+        'Content-Length': archive.length,
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+      })
+      res.end(archive)
+    },
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Messages
 // ---------------------------------------------------------------------------
@@ -242,4 +264,40 @@ export function messagesStop({ params }) {
     return { status: 404, json: { message: 'message_not_found' } }
   }
   return { status: 200, json: { messageId: params.messageId } }
+}
+
+// ---------------------------------------------------------------------------
+// Vercel Connect setup status
+// ---------------------------------------------------------------------------
+
+function connectorsCollection() {
+  return openCollection(store.stateDirPath(), 'connectors')
+}
+
+/**
+ * Records connector setup state keyed by the `requestId` from a
+ * `configure_vercel_connect` action (used by `chats.getConnectStatus`).
+ * Not a spec'd op — callers seed it (or drop a `connectors/<id>.json` file)
+ * to drive the pending -> ready/error transition deterministically.
+ */
+export function setConnectorStatus(requestId, record) {
+  const collection = connectorsCollection()
+  return collection.update(requestId, { ...record, id: requestId, updatedAt: new Date().toISOString() })
+    || collection.create({ ...record, id: requestId, createdAt: new Date().toISOString() })
+}
+
+export function chatsGetConnectStatus({ params, query }) {
+  const chat = store.getChat(params.chatId)
+  if (!chat) return { status: 404, json: { message: 'chat_not_found' } }
+  const record = connectorsCollection().get(query.requestId)
+  if (record && record.status === 'ready' && record.connector) {
+    return { status: 200, json: { status: 'ready', connector: record.connector } }
+  }
+  if (record && record.status === 'pending') {
+    return { status: 200, json: { status: 'pending', progress: record.progress || 'setting up connector' } }
+  }
+  if (record && record.status === 'error' && record.message) {
+    return { status: 200, json: { status: 'error', message: record.message } }
+  }
+  return { status: 200, json: { status: 'error', message: 'vercel_connect_not_configured' } }
 }

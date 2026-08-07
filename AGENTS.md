@@ -138,12 +138,18 @@ install the compose file / README port mapping applies as written.
   `files/<id>.json`, `workspace/<chatId>/` (from-zip/repo extraction), plus
   `mcp-servers.json`, `webhooks.json`, `preview-hosts.json` and
   `webhook-deliveries.jsonl` (Phase 3). Phase 3 — streaming + CRUD + previews +
-  MCP + webhooks are live: `chats.createStream`, `messages.sendStream`
+  MCP + webhooks are live: `chats.createStream`,   `messages.sendStream`
   and `chats.resume` emit the raw `ChatStreamEvent`/`MessageStreamEvent` wire
   format on a deterministic mock backend; the full chat/message CRUD matrix
   (create/list/get/update/delete/duplicate, async variants, restore-message,
   from-files/zip/repo, getFiles/updateFiles) is implemented against the
-  persistent store (`api/lib/{chat-store,chat-handlers,from}.mjs`). Phase 3 adds
+  persistent store (`api/lib/{chat-store,chat-handlers,from}.mjs`).
+  `chats.downloadFiles` streams a dependency-free stored ZIP of the chat's
+  files (`api/lib/zip.mjs`; no external zip lib — entry CRC32, UTF-8 flag,
+  POSIX modes, base64/utf8 content); `chats.getConnectStatus` reads
+  `state/api/connectors.json` keyed by `requestId` and returns the spec's
+  `pending|ready|error` oneOf, defaulting to `error: vercel_connect_not_configured`
+  unless a record is seeded via `setConnectorStatus()` or a hand-written file. Phase 3 adds
   `chats.getPreview` (HMAC-signed chat-scoped token, 30 min TTL,
   `NEXOS_API_PREVIEW_SECRET`; `null` while the chat has no files), a preview
   ingress on `NEXOS_PREVIEW_PORT` (8082) ported from the SDK's `preview-proxy.ts`
