@@ -119,10 +119,17 @@ install the compose file / README port mapping applies as written.
   which `proxyStream()` forwards verbatim to `NEXOS_API_PORT` (8081) SSE —
   frames are `event: update` `{status,event,chat,parts}` + a trailing `done`, so
   the client renders `payload.parts` text and never sees the raw API token. The
-  `/health` dependency probe includes `api`; `tests/web-smoke.sh` boots a live
-  gateway (port 9997, loopback) and checks the proxy round-trip + 400/404 error
-  forwarding. When testing with curl, `Content-Type` equality checks must account
-  for `charset` (e.g. `text/html; charset=utf-8`).
+  panel renders via `web/chat-chunks.mjs` — a dependency-free port of
+  `@v0-sdk/react` `chat/chunks.ts` (`V0SnapshotChunkReducer`) that reduces each
+  envelope snapshot into incremental chunks (text/reasoning start-delta-end +
+  `data-v0-<type>` action rows) — served as a whitelisted static asset
+  (`GET /chat-chunks.mjs`, `text/javascript`), loaded by the dashboard with a
+  dynamic `import()`, and unit-tested by `tests/web-chat-chunks.mjs` (9
+  checks). The `/health` dependency probe includes `api`; `tests/web-smoke.sh`
+  boots a live gateway (port 9997, loopback) and checks the proxy round-trip +
+  the renderer asset + 400/404 error forwarding. When testing with curl,
+  `Content-Type` equality checks must account for `charset` (e.g. `text/html;
+  charset=utf-8`).
 - **API gateway**: `api/api-server.mjs` is a plain `node:http` ESM server
   supervised as the `api` service (`NEXOS_API_PORT`, 8081) implementing the
   v0.app **API v2** contract under `/v2`. The route table is derived at startup

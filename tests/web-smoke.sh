@@ -58,6 +58,10 @@ check "GET / serves the dashboard" \
   [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/")" = "200" ]
 check "GET / returns text/html" \
   sh -c "curl -s -o /dev/null -w '%{content_type}' '$BASE/' | grep -q 'text/html'"
+check "GET /chat-chunks.mjs serves the stream renderer" \
+  sh -c "curl -s '$BASE/chat-chunks.mjs' | grep -q 'class V0SnapshotChunkReducer'"
+check "GET /chat-chunks.mjs returns text/javascript" \
+  sh -c "curl -s -o /dev/null -w '%{content_type}' '$BASE/chat-chunks.mjs' | grep -q 'text/javascript'"
 
 # --- API surface -------------------------------------------------------------
 check "GET /api/v1/status returns supervisor array" \

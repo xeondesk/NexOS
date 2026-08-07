@@ -440,6 +440,20 @@ function serveIndex(req, res) {
   })
 }
 
+function serveStaticAsset(req, res, name, contentType) {
+  fs.readFile(path.join(__dirname, name), (err, data) => {
+    if (err) {
+      sendJson(res, 404, { error: 'not found' })
+      return
+    }
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Cache-Control': 'no-store',
+    })
+    res.end(data)
+  })
+}
+
 async function handle(req, res) {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
   const pathname = url.pathname.replace(/\/$/, '') || '/'
@@ -479,6 +493,10 @@ async function handle(req, res) {
 
   if (req.method === 'GET' && pathname === '/') {
     return serveIndex(req, res)
+  }
+
+  if (req.method === 'GET' && pathname === '/chat-chunks.mjs') {
+    return serveStaticAsset(req, res, 'chat-chunks.mjs', 'text/javascript; charset=utf-8')
   }
 
   if (req.method === 'POST' && pathname === '/api/v1/login') {

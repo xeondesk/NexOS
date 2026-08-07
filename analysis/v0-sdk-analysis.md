@@ -220,8 +220,15 @@ Phased development plan. Each phase is independently shippable + testable.
       implemented (no 501s); covered in `api-crud-smoke.sh` (+8).
 
 ### Phase 4 — React/SDK client compatibility
-- [ ] Run `@v0-sdk/react` `V0Transport` against local proxy routes; ship the
-      dashboard chat UI using the stream renderer from `chat/chunks.ts`.
+- [x] `@v0-sdk/react` `V0Transport` round-trip against the envelope proxy routes
+      (`tests/api-react-sdk.mjs`, 13 checks, run via `api-stream-smoke.sh`).
+- [x] Dashboard chat UI uses the `chat/chunks.ts` stream renderer: ported as
+      `web/chat-chunks.mjs` (`V0SnapshotChunkReducer`, dependency-free, served
+      at `GET /chat-chunks.mjs`), consumed by the assistant panel in
+      `web/index.html` via dynamic import. The panel now renders incremental
+      text/reasoning deltas (thinking in a collapsible `details`) + action
+      traces (`data-v0-<type>`) instead of re-setting the full text each frame.
+      Unit-tested by `tests/web-chat-chunks.mjs` (9 checks).
 - [ ] `ai-tools` parity only if a self-hosted model backend exists (out of scope
       until then).
 

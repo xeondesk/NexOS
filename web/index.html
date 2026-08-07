@@ -76,6 +76,11 @@
   #chatbox .meta { color: var(--dim); font-size: 11px; margin-bottom: 2px; }
   #chatbox .assistant-text { white-space: pre-wrap; }
   #chatbox .status { color: var(--dim); font-size: 11px; }
+  #chatbox .thinking { color: var(--dim); font-size: 11px; margin: 2px 0 6px; }
+  #chatbox .thinking summary { cursor: pointer; user-select: none; }
+  #chatbox .thinking .assistant-text { white-space: pre-wrap; font-size: 11px; }
+  #chatbox .actions { margin: 4px 0; display: grid; gap: 2px; }
+  #chatbox .action { font-family: var(--mono, monospace); font-size: 11px; color: var(--dim); }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .row .spacer { flex: 1; }
   .metric { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; }
@@ -330,10 +335,11 @@ $('logoutbtn').addEventListener('click', async () => {
   showLogin();
 });
 
-// --- assistant (v2 chat SSE) ---
+// --- assistant (v2 chat SSE, incremental renderer from chat/chunks.mjs) ---
 let chatId = null;
 let chatBusy = false;
 let chatAssistantEl = null;
+let chatRender = null; // { reducer, textEls, thinkingEl, actionEl, actionRows }
 
 function chatLine(cls, html) {
   const d = document.createElement('div');
@@ -352,20 +358,70 @@ function chatStatus(text) {
   chatAppend(chatLine('status', '<span class="meta">' + esc(text) + '</span>'));
 }
 
-function assistantText(parts) {
-  return (parts || []).filter((p) => p.type === 'text').map((p) => p.text || '').join('');
+function chatStartAssistant() {
+  chatAssistantEl = chatLine('assistant', '');
+  chatAssistantEl.appendChild(Object.assign(document.createElement('div'), { className: 'role', textContent: 'assistant' }));
+  chatAppend(chatAssistantEl);
 }
 
-function setAssistantText(text) {
-  if (!chatAssistantEl) {
-    chatAssistantEl = chatLine('assistant', '');
-    chatAssistantEl.appendChild(Object.assign(document.createElement('div'), { className: 'role', textContent: 'assistant' }));
-    chatAssistantEl.appendChild(Object.assign(document.createElement('div'), { className: 'assistant-text', textContent: '' }));
-    chatAssistantEl._acc = chatAssistantEl.lastChild;
-    chatAppend(chatAssistantEl);
+function chatActionSummary(data) {
+  if (!data) return '';
+  if (data.command) return ': $ ' + esc(data.command);
+  if (data.operation) return ': ' + esc(data.path) + (data.toPath ? ' → ' + esc(data.toPath) : '');
+  if (data.name) return ': ' + esc(data.name);
+  if (data.paths) return ': ' + esc(data.paths.join(', '));
+  if (data.query) return ': ' + esc(data.query);
+  if (data.summary) return ': ' + esc(data.summary);
+  return '';
+}
+
+function chatRenderChunk(chunk) {
+  const r = chatRender;
+  if (!r) return;
+  const t = chunk.type;
+  if (t === 'start' || t === 'finish') return;
+  if (t === 'text-start' || t === 'text-delta' || t === 'text-end') {
+    let rec = r.textEls.get(chunk.id);
+    if (!rec) {
+      rec = Object.assign(document.createElement('div'), { className: 'assistant-text', textContent: '' });
+      chatAssistantEl.appendChild(rec);
+      r.textEls.set(chunk.id, rec);
+    }
+    if (t !== 'text-end' && chunk.delta) rec.textContent += chunk.delta;
+    return;
   }
-  chatAssistantEl._acc.textContent = text;
-  $('chatbox').scrollTop = $('chatbox').scrollHeight;
+  if (t === 'reasoning-start' || t === 'reasoning-delta' || t === 'reasoning-end') {
+    if (!r.thinkingEl) {
+      r.thinkingEl = document.createElement('details');
+      r.thinkingEl.className = 'thinking';
+      const summary = document.createElement('summary');
+      summary.textContent = 'thinking';
+      const body = document.createElement('div');
+      body.className = 'assistant-text';
+      r.thinkingEl._acc = body;
+      r.thinkingEl.appendChild(summary);
+      r.thinkingEl.appendChild(body);
+      chatAssistantEl.appendChild(r.thinkingEl);
+    }
+    if (t !== 'reasoning-end' && chunk.delta) r.thinkingEl._acc.textContent += chunk.delta;
+    return;
+  }
+  if (t.startsWith('data-v0-')) {
+    if (!r.actionEl) {
+      r.actionEl = document.createElement('div');
+      r.actionEl.className = 'actions';
+      chatAssistantEl.appendChild(r.actionEl);
+    }
+    let row = r.actionRows.get(chunk.id);
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'action';
+      r.actionRows.set(chunk.id, row);
+      r.actionEl.appendChild(row);
+    }
+    row.textContent = '• ' + t.slice('data-v0-'.length).replace('-', ' ') + chatActionSummary(chunk.data);
+    return;
+  }
 }
 
 function appendUserMessage(text) {
@@ -383,16 +439,19 @@ function handleChatEvent(ev, payload) {
       chatId = payload.chat.id;
       chatStatus('chat ' + chatId.slice(0, 8) + '… ready');
     }
-    if (evt.object === 'message.parts.chunk' || evt.object === 'message.usage'
-        || (evt.object === 'chat' && payload.parts && payload.parts.length)) {
-      setAssistantText(assistantText(payload.parts));
+    if (chatRender) {
+      for (const chunk of chatRender.reducer.push(payload)) chatRenderChunk(chunk);
+      $('chatbox').scrollTop = $('chatbox').scrollHeight;
     }
     return;
   }
   if (ev === 'done') {
-    setAssistantText(assistantText(payload.parts));
+    if (chatRender) {
+      for (const chunk of chatRender.reducer.push(payload, true)) chatRenderChunk(chunk);
+    }
     chatStatus('done');
     chatAssistantEl = null;
+    chatRender = null;
     return;
   }
   if (ev === 'error') {
@@ -404,7 +463,15 @@ async function chatStream(path, body) {
   chatBusy = true;
   $('chatsendbtn').disabled = true;
   $('chatresumebtn').disabled = true;
-  chatAssistantEl = null;
+  chatStartAssistant();
+  const { V0SnapshotChunkReducer } = await import('./chat-chunks.mjs');
+  chatRender = {
+    reducer: new V0SnapshotChunkReducer(),
+    textEls: new Map(),
+    thinkingEl: null,
+    actionEl: null,
+    actionRows: new Map(),
+  };
   try {
     const res = await api(path, {
       method: 'POST',
