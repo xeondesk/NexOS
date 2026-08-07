@@ -152,8 +152,10 @@ Phased development plan. Each phase is independently shippable + testable.
 - [x] `api/` service skeleton supervised like others: `api-server.mjs`
   (node:http, no framework), routes matching the v2 paths, bearer auth via
   `NEXOS_API_TOKEN` + loopback-trust (reuse the web-portal auth model).
-- [ ] Generated types: run `openapi-ts` in a scratch dir, vendor
-  `types.gen.ts` into `api/types.mjs`-importable form (or keep TS + build).
+- [x] Generated types: deliberately not vendored — the gateway is plain
+      dependency-free JS (no build step), and the real-SDK round-trip tests
+      (`tests/api-stream-sdk.mjs`) validate the contract dynamically, so a
+      static `types.gen.ts` would be dead weight.
 
 ### Phase 1 — streaming wire format ✅ (commit `3d440ed`)
 - [x] Port `diffpatch.mjs` (jsondiffpatch + `[9,9]` append delta) + unit tests.

@@ -33,12 +33,15 @@ nexos/
 │   ├── allowed-signers   trusted signing keys
 │   └── credential-helper git credential fill helper
 ├── web/
-│   ├── api-server.js     web portal API server (auth, status, logs, exec, metrics)
-│   └── index.html        dependency-free dark dashboard (consumes /api/v1)
+│   ├── api-server.js     web portal API server (auth, status, logs, exec, metrics, chat proxy)
+│   ├── index.html        dependency-free dark dashboard (consumes /api/v1, Assistant panel)
+│   └── chat-chunks.mjs   dashboard stream renderer (port of @v0-sdk/react chat/chunks.ts)
 ├── api/
 │   ├── api-server.mjs    v0-compatible API gateway (v2 contract, routes from spec)
-│   └── openapi-v2.json   v0.app production API v2 contract (vercel/v0-sdk)
-├── state/                runtime: logs/, run/ (pidfiles + locks)
+│   ├── openapi-v2.json   v0.app production API v2 contract (vercel/v0-sdk)
+│   └── lib/              chat-store, chat-handlers, stream-handlers, mock-generator, zip,
+│                         preview, meta-store, meta-handlers, webhooks, diffpatch, v0-stream
+├── state/                runtime: logs/, run/ (pidfiles + locks), api/ (gateway state)
 └── tests/                supervisor / log-proxy / metrics / git-sign / web / api smoke tests
 ```
 
@@ -102,7 +105,8 @@ plain `node:http`) that aggregates the whole control plane behind one port:
 | Route | Method | Purpose |
 |---|---|---|
 | `/` | GET | dashboard (`web/index.html`) |
-| `/health` | GET | liveness + auth flag + log-proxy/bridge/git-sign dependency state |
+| `/chat-chunks.mjs` | GET | dashboard stream renderer (`web/chat-chunks.mjs`) |
+| `/health` | GET | liveness + auth flag + log-proxy/bridge/git-sign/api dependency state |
 | `/api/v1/status` | GET | supervised service states (pidfile scan + `ps` match) |
 | `/api/v1/logs` | GET | log-proxy history (proxied) |
 | `/api/v1/exec` | POST | run `{cmd,args,...}` through the log-proxy (120s timeout) |
@@ -110,6 +114,8 @@ plain `node:http`) that aggregates the whole control plane behind one port:
 | `/api/v1/git-sign` | GET | git-sign service reachability + public key |
 | `/api/v1/bridge` | GET | bridge status |
 | `/api/v1/settings` | GET/PUT | persisted settings (`NEXOS_WEB_STATE_FILE`, atomic write + debounce) |
+| `/api/v1/chat/stream` | POST | proxy the gateway envelope SSE (`{message, chatId?}` → create/continue) |
+| `/api/v1/chat/resume` | POST | proxy the gateway envelope SSE (`{chatId}` → replay) |
 | `/api/v1/login` | POST | exchange token for session cookie |
 | `/api/v1/logout` | POST | clear session cookie |
 
@@ -119,7 +125,11 @@ SHA256 over the expiry, 12h TTL, HttpOnly/SameSite=Lax). Set
 `NEXOS_WEB_TOKEN` to enable auth — unset, the portal is open (loopback-only by
 default via `NEXOS_WEB_HOST=127.0.0.1`; serve `0.0.0.0` with
 `NEXOS_ALLOW_REMOTE=true`). The dashboard (`web/index.html`) has no build
-step or framework dependency and is served by the API server itself.
+step or framework dependency and is served by the API server itself. Its
+**Assistant panel** streams the v2 gateway through the chat proxy routes
+(never exposing the API token to the browser) and renders incrementally with
+`web/chat-chunks.mjs` — a port of `@v0-sdk/react`'s `chat/chunks.ts`
+snapshot-reducer (text/reasoning deltas + action traces).
 
 ## v0-compatible API gateway
 
@@ -152,7 +162,18 @@ built-in mock upstream serves the chat's ingested files). `mcp-servers` and
 `hooks` are full CRUD with persistence, and lifecycle events
 (`chat.created/updated/deleted`, `message.finished`) are delivered to subscribed
 webhook URLs with retries (see `state/api/webhook-deliveries.jsonl`). Covered by
-`tests/api-meta-smoke.sh` + `tests/api-preview-smoke.sh`.
+`tests/api-meta-smoke.sh` + `tests/api-preview-smoke.sh`. The Phase 3
+continuation closed out the remaining operations: `chats.downloadFiles`
+streams a stored ZIP (`api/lib/zip.mjs`), `chats.getConnectStatus` polls a
+seeded `connectors.json` (pending/ready/error), the `messages.resolve*` family
+(`resolve`/`resolveAsync`/`resolveStream`) answers the five task shapes with a
+deterministic follow-up turn, and `chats.createVercelProject`/`chats.deploy`
+use local `projects.json`/`deployments.json` equivalents (the chat is linked
+via `chat.vercelProjectId`; a deployment's `url` resolves to the preview
+ingress). Every operation in `openapi-v2.json` is implemented — the 501
+fallback is now unreachable — covered by `tests/api-crud-smoke.sh` +
+`tests/api-stream-smoke.sh` (+ `tests/api-stream-sdk.mjs`, a real-SDK round
+trip).
 
 Auth mirrors the portal: loopback always trusted, `NEXOS_API_TOKEN` required as
 `Authorization: Bearer <token>` from non-loopback clients (which is exactly how
