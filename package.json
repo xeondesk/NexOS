@@ -9,7 +9,7 @@
     "nexos": "./bin/nexos"
   },
   "scripts": {
-    "test": "bash tests/supervisor-smoke.sh && node tests/log-proxy-smoke.mjs && bash tests/metrics-smoke.sh && bash tests/bridge-smoke.sh && node tests/editor-extension-smoke.mjs && bash tests/vsix-smoke.sh && bash tests/sign-server-smoke.sh && bash tests/web-smoke.sh"
+    "test": "bash tests/supervisor-smoke.sh && node tests/log-proxy-smoke.mjs && bash tests/metrics-smoke.sh && bash tests/bridge-smoke.sh && node tests/editor-extension-smoke.mjs && bash tests/vsix-smoke.sh && bash tests/sign-server-smoke.sh && bash tests/web-smoke.sh && bash tests/api-smoke.sh"
   },
   "dependencies": {
     "ws": "^8.19.0"

@@ -57,6 +57,7 @@ start_one() {
     bridge)   : ;;
     git-sign) has_sign_key || { echo "[entrypoint] git-sign skipped (no signing key configured)"; return 0; } ;;
     web)      : ;;
+    api)      : ;;
   esac
   "$NEXOS_CLI" start "$name"
   echo "[entrypoint] started $name"
@@ -66,7 +67,7 @@ stop_all() {
   [ "$STOPPED" -eq 1 ] && return 0
   STOPPED=1
   echo "[entrypoint] shutting down services..."
-  for name in log-proxy editor terminal metrics bridge git-sign web; do
+  for name in log-proxy editor terminal metrics bridge git-sign web api; do
     "$NEXOS_CLI" stop "$name" 2>/dev/null || true
   done
 }
@@ -81,8 +82,9 @@ start_one metrics
 start_one bridge
 start_one git-sign
 start_one web
+start_one api
 
-echo "[entrypoint] NexOS ready — editor :${NEXOS_EDITOR_PORT}, terminal :${NEXOS_TERMINAL_PORT}, control plane :${NEXOS_LOG_PROXY_PORT}, bridge :${NEXOS_BRIDGE_PORT}, git-sign :${NEXOS_GIT_SIGN_PORT}, web :${NEXOS_WEB_PORT}"
+echo "[entrypoint] NexOS ready — editor :${NEXOS_EDITOR_PORT}, terminal :${NEXOS_TERMINAL_PORT}, control plane :${NEXOS_LOG_PROXY_PORT}, bridge :${NEXOS_BRIDGE_PORT}, git-sign :${NEXOS_GIT_SIGN_PORT}, web :${NEXOS_WEB_PORT}, api :${NEXOS_API_PORT}"
 
 # Sleep loop that stays interruptible by the trap above.
 while :; do

@@ -114,3 +114,11 @@ host bootstrap.
    reachability + pubkey, and persisted settings. Supervised as the `web` service,
    started by the entrypoint, covered by `tests/web-smoke.sh` (21 checks) and the
    Docker runtime validation.
+9. v0-compatible API gateway — `api/api-server.mjs` + `api/openapi-v2.json`
+   (contract copied from `vercel/v0-sdk`, Apache-2.0) expose the v0.app
+   production **API v2** surface under `/v2`: the route table is derived from the
+   spec (all 41 operations), with contract validation, `{message}` errors, and
+   `NEXOS_API_TOKEN` bearer/loopback auth. Phase 0 = routing/auth/validation
+   skeleton (unimplemented ops return 501). Streaming wire format (jsondiffpatch
+   deltas), chat/message CRUD, previews, MCP servers and webhooks land in later
+   phases — plan in `analysis/v0-sdk-analysis.md`.

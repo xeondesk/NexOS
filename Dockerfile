@@ -89,7 +89,7 @@ RUN mkdir -p /opt/nexos/state /workspace \
 USER nexos
 WORKDIR /workspace
 
-EXPOSE 4444 7681 7682 9876 8080
+EXPOSE 4444 7681 7682 9876 8080 8081
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=5 \
   CMD curl -fsS "http://127.0.0.1:${NEXOS_LOG_PROXY_PORT:-7682}/health" >/dev/null || exit 1

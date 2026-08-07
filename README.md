@@ -35,8 +35,11 @@ nexos/
 ├── web/
 │   ├── api-server.js     web portal API server (auth, status, logs, exec, metrics)
 │   └── index.html        dependency-free dark dashboard (consumes /api/v1)
+├── api/
+│   ├── api-server.mjs    v0-compatible API gateway (v2 contract, routes from spec)
+│   └── openapi-v2.json   v0.app production API v2 contract (vercel/v0-sdk)
 ├── state/                runtime: logs/, run/ (pidfiles + locks)
-└── tests/                supervisor / log-proxy / metrics / git-sign / web smoke tests
+└── tests/                supervisor / log-proxy / metrics / git-sign / web / api smoke tests
 ```
 
 ## Quick start
@@ -49,6 +52,7 @@ nexos start editor         # VS Code web on NEXOS_EDITOR_PORT (4444)
 nexos start metrics        # metrics daemon
 nexos start bridge         # control API for editor hosts (NEXOS_BRIDGE_PORT, 9876)
 nexos start web            # full-platform web portal on NEXOS_WEB_PORT (8080)
+nexos start api            # v0-compatible API gateway on NEXOS_API_PORT (8081)
 nexos sign-keygen          # git-sign keypair (state/sign/sign-key.{pem,pub})
 nexos start git-sign       # self-hosted SSH signing service (NEXOS_GIT_SIGN_PORT, 9877)
 nexos status
@@ -117,6 +121,26 @@ default via `NEXOS_WEB_HOST=127.0.0.1`; serve `0.0.0.0` with
 `NEXOS_ALLOW_REMOTE=true`). The dashboard (`web/index.html`) has no build
 step or framework dependency and is served by the API server itself.
 
+## v0-compatible API gateway
+
+`nexos start api` runs a dependency-free `node:http` gateway
+(`api/api-server.mjs`) implementing the **v0.app production API v2 contract**
+(`https://api.v0.dev/v2`), served under `/v2`. The route table is derived at
+startup from `api/openapi-v2.json` — a copy of the spec shipped with
+`vercel/v0-sdk` (Apache-2.0) — so the mounted surface (all 41 operations:
+chats, messages, MCP servers, previews, webhooks) can never drift from the
+contract. Connect the real SDK with `createV0Client({ baseUrl:
+'http://127.0.0.1:8081/v2', auth })`.
+
+This is a phased effort: Phase 0 ships the routing/auth/validation skeleton
+(known operations dispatch and validate, unimplemented handlers return `501`),
+with the streaming wire format, chat/message CRUD, previews, MCP servers and
+webhooks landing in later phases (see `analysis/v0-sdk-analysis.md`).
+
+Auth mirrors the portal: loopback always trusted, `NEXOS_API_TOKEN` required as
+`Authorization: Bearer <token>` from non-loopback clients (which is exactly how
+the SDK authenticates). Error responses use the v2 `Error` shape `{ message }`.
+
 ## Configuration
 
 Everything is overridable via `NEXOS_*` env vars (see `config/nexos.conf`):
@@ -170,7 +194,7 @@ NexOS ships three git helpers under `git/`; wire them per your provider:
 ## Tests
 
 ```sh
-npm test   # supervisor + log-proxy + metrics + bridge + extension + git-sign + web smoke tests
+npm test   # supervisor + log-proxy + metrics + bridge + extension + git-sign + web + api smoke tests
 ```
 
 ## Docker
@@ -195,9 +219,10 @@ docker run --rm -p 4444:4444 -p 7681:7681 -p 7682:7682 \
 - `/workspace` is the mounted code directory; `nexos-state` volume persists
   logs, pidfiles, and editor config.
 - Ports: `4444` editor, `7681` terminal, `7682` log-proxy, `9876` bridge API
-  (localhost-only by default), `8080` web portal (`NEXOS_WEB_PORT`).
+  (localhost-only by default), `8080` web portal (`NEXOS_WEB_PORT`), `8081` v2
+  API gateway (`NEXOS_API_PORT`).
 - Service gating via `NEXOS_ENABLE_*` (`log-proxy`, `editor`, `terminal`,
-  `metrics`, `bridge`, `web`). Editor/terminal auto-skip if the binary is
+  `metrics`, `bridge`, `web`, `api`). Editor/terminal auto-skip if the binary is
   absent; metrics auto-skip until a callback URL is configured
   (`NEXOS_CALLBACK_URL` or a mounted `config/nexos.env`).
 - The entrypoint (`bin/entrypoint.sh`) starts all services, traps

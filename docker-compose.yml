@@ -5,6 +5,7 @@
 #   open http://localhost:7681   (web terminal)
 #   open http://localhost:8080   (web portal dashboard)
 #   curl  http://localhost:7682/health   (control plane)
+#   curl  http://localhost:8081/health   (v2 API gateway)
 
 services:
   nexos:
@@ -19,6 +20,7 @@ services:
       - "7682:7682"   # log-proxy control plane
       - "9876:9876"   # bridge API (localhost-only by default)
       - "8080:8080"   # web portal dashboard
+      - "8081:8081"   # v2 API gateway (SDK baseUrl: http://host:8081/v2)
     volumes:
       - ./workspace:/workspace            # your code lives here
       - nexos-state:/opt/nexos/state      # logs, pidfiles, editor config
@@ -30,6 +32,7 @@ services:
       - NEXOS_LOG_PROXY_PORT=7682
       - NEXOS_BRIDGE_PORT=9876
       - NEXOS_WEB_PORT=8080
+      - NEXOS_API_PORT=8081
       # Auth for the web portal. Loopback is always trusted; set a token to
       # gate non-loopback dashboard requests (login screen / bearer header):
       # - NEXOS_WEB_TOKEN=changeme

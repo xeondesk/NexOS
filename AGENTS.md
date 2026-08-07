@@ -18,12 +18,13 @@ is explicitly out of scope for migration.
 - `services/` — editor.sh (code-server), terminal.sh (ttyd)
 - `bridge/bridge-api.js` — standalone control API for editor hosts
 - `web/` — api-server.js (portal API) + index.html (no-build dashboard)
+- `api/` — api-server.mjs (v0-compatible v2 API gateway) + openapi-v2.json (contract)
 - `git/` — ssh-sign.sh, sign-server.js, sign-keygen.js, allowed-signers, credential-helper
 - `tests/` — smoke tests; `workspace/` — mounted code dir
 
 ## Commands
 
-- Tests: `npm test` (supervisor + log-proxy + metrics + bridge + editor-extension + vsix packaging + git-sign + web smoke tests)
+- Tests: `npm test` (supervisor + log-proxy + metrics + bridge + editor-extension + vsix packaging + git-sign + web + api smoke tests)
 - VSIX: `bash bridge/editor-extension/build-vsix.sh` (vendors `bridge-api.js`,
   strips the source-tree fallback require, emits `nexos-bridge-<ver>.vsix`)
 - CLI smoke: `bin/nexos status`, `bin/nexos exec "node -v"`
@@ -114,6 +115,19 @@ install the compose file / README port mapping applies as written.
   `/api/v1/exec` + `/api/v1/logs` proxy the log-proxy loopback; exec uses a 120s
   timeout. When testing with curl, `Content-Type` equality checks must account for
   `charset` (e.g. `text/html; charset=utf-8`).
+- **API gateway**: `api/api-server.mjs` is a plain `node:http` ESM server
+  supervised as the `api` service (`NEXOS_API_PORT`, 8081) implementing the
+  v0.app **API v2** contract under `/v2`. The route table is derived at startup
+  from `api/openapi-v2.json` (checked-in copy of `vercel/v0-sdk`'s
+  `openapi.json`, Apache-2.0) — never hand-edit a route list, regenerate from the
+  spec. Order matters when matching: `GET /v2/chats/stream` is `chats.createStream`
+  (POST-only), but `DELETE /v2/chats/stream` matches the parameterized
+  `DELETE /chats/{chatId}` (it's a delete of chat id "stream") — expect that
+  ambiguity, don't "fix" it. Errors use the v2 `Error` shape `{message}`; known
+  but unimplemented operations return `501 {"message":"not_implemented:<op>"}`.
+  Auth mirrors the portal: loopback trusted, `NEXOS_API_TOKEN` bearer for remote.
+  This is Phase 0 — streaming/CRUD/preview/MCP/webhooks come later
+  (`analysis/v0-sdk-analysis.md`).
 
 ## Verification flow
 
