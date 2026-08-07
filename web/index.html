@@ -81,6 +81,25 @@
   #chatbox .thinking .assistant-text { white-space: pre-wrap; font-size: 11px; }
   #chatbox .actions { margin: 4px 0; display: grid; gap: 2px; }
   #chatbox .action { font-family: var(--mono, monospace); font-size: 11px; color: var(--dim); }
+  #chatlist {
+    background: #010409; border: 1px solid var(--border); border-radius: 6px;
+    max-height: 140px; overflow-y: auto; padding: 4px; margin-bottom: 8px;
+    font-size: 12px;
+  }
+  #chatlist .empty { color: var(--dim); padding: 6px 8px; }
+  .chatitem {
+    display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+    border-radius: 4px; cursor: pointer;
+  }
+  .chatitem:hover { background: var(--border); }
+  .chatitem.active { background: var(--border); }
+  .chatitem .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chatitem .when { color: var(--dim); font-size: 11px; }
+  .chatdel {
+    background: none; border: none; color: var(--dim); cursor: pointer;
+    font-size: 12px; padding: 0 2px; line-height: 1;
+  }
+  .chatdel:hover { color: var(--red); }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .row .spacer { flex: 1; }
   .metric { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; }
@@ -157,6 +176,7 @@
         <button id="chatresumebtn" type="button">resume</button>
       </span>
     </h2>
+    <div id="chatlist"></div>
     <div id="chatbox"></div>
     <div class="row" style="margin-top:8px">
       <input id="chatinput" placeholder="message the v2 API (streams SSE)" style="flex:1">
@@ -437,6 +457,8 @@ function handleChatEvent(ev, payload) {
     const evt = payload.event || {};
     if (evt.object === 'chat' && payload.chat && payload.chat.id && payload.chat.id !== chatId) {
       chatId = payload.chat.id;
+      chatActiveId = chatId;
+      chatHighlight(chatId);
       chatStatus('chat ' + chatId.slice(0, 8) + '… ready');
     }
     if (chatRender) {
@@ -511,6 +533,133 @@ async function chatStream(path, body) {
     chatBusy = false;
     $('chatsendbtn').disabled = false;
     $('chatresumebtn').disabled = false;
+    chatRefreshList();
+  }
+}
+
+// --- chat history sidebar -------------------------------------------------
+let chatActiveId = null;
+let chatLoading = false;
+
+function chatTextOf(msg) {
+  if (!msg.parts || !msg.parts.length) return msg.content || '';
+  return msg.parts
+    .filter((p) => p.type === 'text')
+    .map((p) => p.text || '')
+    .join('\n');
+}
+
+function chatHighlight(id) {
+  for (const el of document.querySelectorAll('#chatlist .chatitem')) {
+    el.classList.toggle('active', el.dataset.chatId === id);
+  }
+}
+
+function chatOpen(id) {
+  if (chatBusy || chatLoading || chatActiveId === id) return;
+  chatLoading = true;
+  chatActiveId = id;
+  chatId = id;
+  $('chatbox').innerHTML = '';
+  chatStatus('loading chat ' + id.slice(0, 8) + '…');
+  api('/api/v1/chats/' + encodeURIComponent(id) + '/messages', { method: 'GET' })
+    .then((res) => res.json())
+    .then((j) => {
+      const msgs = (j && j.messages) || [];
+      if (!Array.isArray(j.messages)) throw new Error('bad payload');
+      if (chatBusy || chatActiveId !== id) return;
+      $('chatbox').innerHTML = '';
+      for (const m of msgs) {
+        const el = chatLine(m.role === 'user' ? 'user' : 'assistant', '');
+        el.appendChild(Object.assign(document.createElement('div'), { className: 'role', textContent: m.role }));
+        if (m.role === 'user') {
+          el.appendChild(Object.assign(document.createElement('div'), { className: 'assistant-text', textContent: m.content || '' }));
+        } else {
+          const text = chatTextOf(m);
+          if (text) el.appendChild(Object.assign(document.createElement('div'), { className: 'assistant-text', textContent: text }));
+          const actions = (m.parts || []).filter((p) => typeof p.type === 'string' && p.type.startsWith('data-v0-'));
+          if (actions.length) {
+            const wrap = document.createElement('div');
+            wrap.className = 'actions';
+            for (const a of actions) {
+              const row = document.createElement('div');
+              row.className = 'action';
+              row.textContent = '• ' + a.type.slice('data-v0-'.length).replace('-', ' ') + chatActionSummary(a.data);
+              wrap.appendChild(row);
+            }
+            el.appendChild(wrap);
+          }
+        }
+        chatAppend(el);
+      }
+      chatStatus('chat ' + id.slice(0, 8) + '… open (' + msgs.length + ' messages)');
+      chatHighlight(id);
+    })
+    .catch((e) => {
+      chatActiveId = null;
+      chatStatus('error: ' + e.message);
+      chatHighlight(null);
+    })
+    .finally(() => { chatLoading = false; });
+}
+
+function chatItemEl(chat) {
+  const item = document.createElement('div');
+  item.className = 'chatitem';
+  item.dataset.chatId = chat.id;
+  const title = document.createElement('span');
+  title.className = 'title';
+  title.textContent = chat.title || '(untitled)';
+  const when = document.createElement('span');
+  when.className = 'when';
+  const dt = chat.updatedAt ? new Date(chat.updatedAt) : null;
+  when.textContent = dt && !isNaN(dt.getTime()) ? dt.toLocaleString() : '';
+  const del = document.createElement('button');
+  del.className = 'chatdel';
+  del.textContent = '✕';
+  del.title = 'delete chat';
+  del.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (!confirm('Delete this chat?')) return;
+    api('/api/v1/chats/' + encodeURIComponent(chat.id), { method: 'DELETE' })
+      .then((res) => {
+        if (!res.ok) throw new Error('delete failed ' + res.status);
+        if (chatActiveId === chat.id) {
+          chatId = null;
+          chatActiveId = null;
+          $('chatbox').innerHTML = '';
+          chatStatus('chat deleted');
+        }
+        chatRefreshList();
+      })
+      .catch((e) => chatStatus('error: ' + e.message));
+  });
+  item.appendChild(title);
+  item.appendChild(when);
+  item.appendChild(del);
+  item.addEventListener('click', () => chatOpen(chat.id));
+  return item;
+}
+
+async function chatRefreshList() {
+  const listEl = $('chatlist');
+  listEl.innerHTML = '';
+  const empty = document.createElement('div');
+  empty.className = 'empty';
+  try {
+    const res = await api('/api/v1/chats?limit=50', { method: 'GET' });
+    const j = await res.json();
+    const chats = (j && j.chats) || [];
+    if (!chats.length) {
+      empty.textContent = 'no saved chats yet';
+      listEl.appendChild(empty);
+      return;
+    }
+    for (const c of chats) listEl.appendChild(chatItemEl(c));
+    chatHighlight(chatActiveId);
+  } catch (e) {
+    empty.textContent = 'chat history unavailable';
+    listEl.appendChild(empty);
   }
 }
 
@@ -525,7 +674,9 @@ $('chatinput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('ch
 $('chatnewbtn').addEventListener('click', () => {
   if (chatBusy) return;
   chatId = null;
+  chatActiveId = null;
   $('chatbox').innerHTML = '';
+  chatHighlight(null);
   chatStatus('new chat (chatId cleared)');
 });
 $('chatresumebtn').addEventListener('click', () => {
@@ -537,7 +688,7 @@ $('chatresumebtn').addEventListener('click', () => {
   hideLogin();
   await loadHealth();
   if (authRequired) return;
-  await Promise.all([loadStatus(), loadMetrics(), loadGitSign(), loadLogs(), loadSettings()]);
+  await Promise.all([loadStatus(), loadMetrics(), loadGitSign(), loadLogs(), loadSettings(), chatRefreshList()]);
   schedulePoll();
 })();
 </script>

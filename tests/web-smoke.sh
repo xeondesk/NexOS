@@ -102,6 +102,18 @@ check "chat/stream without message returns 400" \
 check "chat/stream with unknown chat returns 404" \
   [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"message":"hi","chatId":"chat_nope"}' "$BASE/api/v1/chat/stream")" = "404" ]
 
+# --- chat history (JSON proxies to the live api gateway) --------------------
+check "GET /api/v1/chats lists the streamed chat" \
+  sh -c "curl -s '$BASE/api/v1/chats' | grep -q '\"$CHAT_ID\"'"
+check "GET /api/v1/chats/{id}/messages returns history" \
+  sh -c "curl -s '$BASE/api/v1/chats/$CHAT_ID/messages' | grep -q 'web-smoke chat'"
+check "GET /api/v1/chats/{id}/messages 404s unknown chat" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/chats/chat_nope/messages")" = "404" ]
+check "DELETE /api/v1/chats/{id} removes the chat" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/v1/chats/$CHAT_ID")" = "200" ]
+check "deleted chat disappears from the list" \
+  sh -c "! curl -s '$BASE/api/v1/chats' | grep -q '$CHAT_ID'"
+
 # --- settings persistence ----------------------------------------------------
 check "PUT /api/v1/settings accepted" \
   curl -fs -o /dev/null -X PUT -H 'Content-Type: application/json' \

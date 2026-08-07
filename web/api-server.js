@@ -584,6 +584,57 @@ async function handle(req, res) {
     return
   }
 
+  // --- chat history (JSON proxies for the dashboard sidebar) -------------
+  // GET /api/v1/chats?limit=&cursor=    -> gateway GET /v2/chats
+  // GET /api/v1/chats/{id}/messages     -> gateway GET /v2/chats/{id}/messages
+  // DELETE /api/v1/chats/{id}           -> gateway DELETE /v2/chats/{id}
+  if (req.method === 'GET' && pathname === '/api/v1/chats') {
+    try {
+      const { status, data } = await proxyRequest(API_PORT, 'GET', '/v2/chats' + url.search, { Accept: 'application/json' })
+      sendJson(res, status, JSON.parse(data || '{}'))
+    } catch (err) {
+      sendJson(res, 502, { error: 'api_unavailable', message: err.message })
+    }
+    return
+  }
+
+  const chatMsgMatch = pathname.match(/^\/api\/v1\/chats\/([^/]+)\/messages$/)
+  if (req.method === 'GET' && chatMsgMatch) {
+    const chatId = decodeURIComponent(chatMsgMatch[1])
+    const qs = new URLSearchParams(url.searchParams)
+    if (!qs.has('limit')) qs.set('limit', '50')
+    const q = qs.toString()
+    try {
+      const { status, data } = await proxyRequest(
+        API_PORT,
+        'GET',
+        `/v2/chats/${encodeURIComponent(chatId)}/messages` + (q ? '?' + q : ''),
+        { Accept: 'application/json' },
+      )
+      sendJson(res, status, JSON.parse(data || '{}'))
+    } catch (err) {
+      sendJson(res, 502, { error: 'api_unavailable', message: err.message })
+    }
+    return
+  }
+
+  const chatDelMatch = pathname.match(/^\/api\/v1\/chats\/([^/]+)$/)
+  if (req.method === 'DELETE' && chatDelMatch) {
+    const chatId = decodeURIComponent(chatDelMatch[1])
+    try {
+      const { status, data } = await proxyRequest(
+        API_PORT,
+        'DELETE',
+        `/v2/chats/${encodeURIComponent(chatId)}`,
+        { Accept: 'application/json' },
+      )
+      sendJson(res, status, JSON.parse(data || '{}'))
+    } catch (err) {
+      sendJson(res, 502, { error: 'api_unavailable', message: err.message })
+    }
+    return
+  }
+
   if (req.method === 'GET' && pathname === '/api/v1/status') {
     sendJson(res, 200, {
       supervisor: supervisorStatus(),

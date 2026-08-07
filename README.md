@@ -116,6 +116,9 @@ plain `node:http`) that aggregates the whole control plane behind one port:
 | `/api/v1/settings` | GET/PUT | persisted settings (`NEXOS_WEB_STATE_FILE`, atomic write + debounce) |
 | `/api/v1/chat/stream` | POST | proxy the gateway envelope SSE (`{message, chatId?}` → create/continue) |
 | `/api/v1/chat/resume` | POST | proxy the gateway envelope SSE (`{chatId}` → replay) |
+| `/api/v1/chats` | GET | list saved chats (gateway `GET /v2/chats`, passthrough pagination) |
+| `/api/v1/chats/{id}/messages` | GET | message history for a chat (gateway `GET /v2/chats/{id}/messages`, defaults `limit=50`) |
+| `/api/v1/chats/{id}` | DELETE | delete a chat (gateway `DELETE /v2/chats/{id}`) |
 | `/api/v1/login` | POST | exchange token for session cookie |
 | `/api/v1/logout` | POST | clear session cookie |
 
@@ -129,7 +132,11 @@ step or framework dependency and is served by the API server itself. Its
 **Assistant panel** streams the v2 gateway through the chat proxy routes
 (never exposing the API token to the browser) and renders incrementally with
 `web/chat-chunks.mjs` — a port of `@v0-sdk/react`'s `chat/chunks.ts`
-snapshot-reducer (text/reasoning deltas + action traces).
+snapshot-reducer (text/reasoning deltas + action traces). A **chat history
+sidebar** lists saved chats (gateway `GET /v2/chats`), opens a chat's message
+history to continue it, and deletes chats — so conversations survive page
+reloads and service restarts (the gateway persists everything under
+`NEXOS_API_STATE_DIR`).
 
 ## v0-compatible API gateway
 

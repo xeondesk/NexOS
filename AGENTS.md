@@ -125,7 +125,15 @@ install the compose file / README port mapping applies as written.
   `data-v0-<type>` action rows) — served as a whitelisted static asset
   (`GET /chat-chunks.mjs`, `text/javascript`), loaded by the dashboard with a
   dynamic `import()`, and unit-tested by `tests/web-chat-chunks.mjs` (9
-  checks). The `/health` dependency probe includes `api`; `tests/web-smoke.sh`
+  checks). The dashboard also shows a **chat history sidebar** driven by three
+  JSON proxies that forward to the gateway spec routes: `GET /api/v1/chats`
+  → `GET /v2/chats` (list, passthrough of `?limit=/cursor=`),
+  `GET /api/v1/chats/{id}/messages` → `GET /v2/chats/{id}/messages` (defaults
+  `limit=50`; the spec marks `limit` REQUIRED there, so a bare request would
+  otherwise 422), and `DELETE /api/v1/chats/{id}` → `DELETE /v2/chats/{id}`.
+  Clicking a saved chat fetches + renders its history, sets the panel's
+  `chatId`, and continues that chat on send; deleting clears the active chat.
+  The `/health` dependency probe includes `api`; `tests/web-smoke.sh`
   boots a live gateway (port 9997, loopback) and checks the proxy round-trip +
   the renderer asset + 400/404 error forwarding. When testing with curl,
   `Content-Type` equality checks must account for `charset` (e.g. `text/html;
