@@ -175,7 +175,7 @@ Phased development plan. Each phase is independently shippable + testable.
 - [x] `from-files` / `from-zip` / `from-repo` (local: zip extract into workspace;
       repo: `git clone` — NexOS already owns git infra).
 
-### Phase 3 — preview + MCP + webhooks ✅ (commit `<P3_COMMIT>`)
+### Phase 3 — preview + MCP + webhooks ✅ (commit `c988b6e`)
 - [x] `getPreview` → `{url, token, expiresAt}` (HMAC-signed, chat-scoped, 30 min
       TTL) over the preview ingress; `null` while the chat has no files; 404 for
       unknown chats (`api/lib/preview.mjs` + `meta-handlers.mjs`).
