@@ -20,6 +20,7 @@ check() {
 
 LOGPROXY_PORT=9988
 WEB_PORT=9989
+API_PORT=9997
 BASE="http://127.0.0.1:${WEB_PORT}"
 TOKEN="web-secret-${WEB_PORT}"
 STATE_FILE="$TMP/web-state.json"
@@ -31,10 +32,16 @@ node "$NEXOS_ROOT/lib/log-proxy.js" >"$TMP/logproxy.log" 2>&1 &
 LOGPROXY=$!
 sleep 1
 
+# --- live api gateway on loopback for the chat proxy ------------------------
+NEXOS_API_PORT="$API_PORT" NEXOS_API_STATE_DIR="$TMP/api" \
+  node "$NEXOS_ROOT/api/api-server.mjs" >"$TMP/api.log" 2>&1 &
+API=$!
+sleep 1
+
 start_web() {
   NEXOS_WEB_PORT="$WEB_PORT" NEXOS_WEB_TOKEN="$TOKEN" \
     NEXOS_WEB_STATE_FILE="$STATE_FILE" NEXOS_LOG_PROXY_PORT="$LOGPROXY_PORT" \
-    NEXOS_RUN_DIR="$TMP/run" \
+    NEXOS_API_PORT="$API_PORT" NEXOS_RUN_DIR="$TMP/run" \
     node "$NEXOS_ROOT/web/api-server.js" >"$TMP/web.log" 2>&1 &
   WEB=$!
   sleep 1
@@ -65,6 +72,31 @@ check "GET /api/v1/git-sign reports unreachable when down" \
   sh -c "curl -s '$BASE/api/v1/git-sign' | grep -q '\"reachable\":false'"
 check "unknown route returns 404" \
   [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/nope")" = "404" ]
+
+# --- chat proxy (SSE forwarding to the live api gateway) --------------------
+CHAT_SEND=$(
+  curl -s -X POST -H 'Content-Type: application/json' \
+    -d '{"message":"web-smoke chat"}' "$BASE/api/v1/chat/stream"
+)
+check "chat/stream streams envelope updates" \
+  sh -c "echo '$CHAT_SEND' | grep -q 'event: update'"
+check "chat/stream ends with a done frame" \
+  sh -c "echo '$CHAT_SEND' | grep -q 'event: done'"
+CHAT_ID=$(printf '%s' "$CHAT_SEND" | grep -o '"id":"chat_[a-z0-9]*"' | head -1 | cut -d'"' -f4)
+check "chat/stream yields a chat id" \
+  [ -n "$CHAT_ID" ]
+CHAT_RESUME=$(
+  curl -s -X POST -H 'Content-Type: application/json' \
+    -d "{\"chatId\":\"$CHAT_ID\"}" "$BASE/api/v1/chat/resume"
+)
+check "chat/resume replays generation frames" \
+  sh -c "echo '$CHAT_RESUME' | grep -q 'event: update'"
+check "chat/resume with unknown chat returns 404" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"chatId":"chat_nope"}' "$BASE/api/v1/chat/resume")" = "404" ]
+check "chat/stream without message returns 400" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' "$BASE/api/v1/chat/stream")" = "400" ]
+check "chat/stream with unknown chat returns 404" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"message":"hi","chatId":"chat_nope"}' "$BASE/api/v1/chat/stream")" = "404" ]
 
 # --- settings persistence ----------------------------------------------------
 check "PUT /api/v1/settings accepted" \
@@ -120,6 +152,8 @@ fi
 
 kill "$LOGPROXY" 2>/dev/null
 wait "$LOGPROXY" 2>/dev/null
+kill "$API" 2>/dev/null
+wait "$API" 2>/dev/null
 
 rm -rf "$TMP"
 

@@ -1,18 +1,29 @@
 // Streaming handlers for the v2 API gateway.
 //
-// Implements the v0 wire format for `chats.createStream`, `messages.sendStream`
-// and `chats.resume`: raw `ChatStreamEvent` / `MessageStreamEvent` objects,
-// each serialized as an SSE `data:` frame (see `formatSse` in v0-stream.mjs).
-// The generated SDK client parses these frames and folds them into accumulated
-// snapshots via `applyStreamEvent`.
+// Two wire formats are served from the same deterministic mock backend:
+//
+// Raw (`chats.createStream` / `messages.sendStream` / `chats.resume`) —
+// `ChatStreamEvent` / `MessageStreamEvent` objects, each serialized as an SSE
+// `data:` frame (see `formatSse` in v0-stream.mjs). The generated `createV0Client`
+// folds these into accumulated snapshots via `applyStreamEvent`.
+//
+// Envelope (`chatsCreateStreamAI` / `messagesSendStreamAI` / `chatsResumeAI`,
+// mounted at `/v2/ai/...`) — the app-side v0 format the `@v0-sdk/react`
+// `V0Transport` consumes: every SSE `data:` frame is a full `V0StreamUpdate`
+// `{ status, event, chat, message?, parts, usage? }` so the transport's
+// snapshot chunk reducer can render without its own accumulation, and the
+// stream ends with an explicit `done` frame carrying the final snapshot.
+// Produced by `createV0StreamResult(...).toResponse()`.
 //
 // Deterministic mock backend: `mock-generator.mjs` produces final parts plus a
 // parts *progression*; consecutive snapshots differ by single text appends, so
 // `message.parts.chunk` deltas exercise the v0 append fast-path
 // ([[idx, 'text', suffix], 9, 9]) as well as plain jsondiffpatch deltas.
 
+import { Readable } from 'node:stream'
+
 import { diff } from './diffpatch.mjs'
-import { formatSse } from './v0-stream.mjs'
+import { createV0StreamResult, formatSse } from './v0-stream.mjs'
 import * as store from './chat-store.mjs'
 import { mockResponse, partsProgression } from './mock-generator.mjs'
 import { emitWebhookEvent } from './webhooks.mjs'
@@ -48,6 +59,81 @@ function openingMessage(message) {
   return { ...messagePayload(message), content: '', parts: [], finishReason: null }
 }
 
+// ---------------------------------------------------------------------------
+// Event builders (shared by the raw and envelope writers)
+// ---------------------------------------------------------------------------
+
+/** Creates the chat + assistant and returns the raw event list for a chat stream. */
+function chatsCreateEvents({ message, title: requestedTitle, privacy, metadata }) {
+  const state = mockResponse(message)
+  const { chat } = store.createChat({ message, title: requestedTitle || state.title, privacy, metadata })
+  const assistant = store.addAssistant(chat.id, { parts: state.parts, content: state.text, usage: store.usageFor(state.text, message) })
+  emitWebhookEvent('chat.created', store.toChatApi(chat))
+  const steps = partsProgression(state.parts)
+  const usage = store.usageFor(state.text, message)
+
+  const events = [chatEvent(chat), { object: 'chat.title', id: chat.id, delta: chat.title }]
+  let prev = []
+  for (const step of steps) {
+    events.push({ object: 'message.parts.chunk', id: assistant.id, delta: diff(prev, step) })
+    prev = step
+  }
+  events.push({ object: 'message.usage', id: assistant.id, usage })
+  events.push(chatEvent(chat))
+  return { chat, assistant, events }
+}
+
+/** Builds the raw event list for a send-message stream, or a 404 result. */
+function messagesSendEvents({ chatId, message }) {
+  const chat = store.getChat(chatId)
+  if (!chat) return { notFound: true }
+  store.addMessage(chat.id, { role: 'user', content: message })
+  const state = mockResponse(message)
+  const assistant = store.addAssistant(chat.id, { parts: state.parts, content: state.text, usage: store.usageFor(state.text, message) })
+  emitWebhookEvent('message.finished', messagePayload(assistant))
+  const steps = partsProgression(state.parts)
+  const usage = store.usageFor(state.text, message)
+
+  const events = [{ object: 'message', ...openingMessage(assistant) }]
+  let prev = []
+  for (const step of steps) {
+    events.push({ object: 'message.parts.chunk', id: assistant.id, delta: diff(prev, step) })
+    prev = step
+  }
+  events.push({ object: 'message.usage', id: assistant.id, usage })
+  events.push({ object: 'message', ...messagePayload(assistant) })
+  return { chat, assistant, events }
+}
+
+/**
+ * Replays the last assistant generation as events. Deterministic — the mock
+ * progression is rebuilt from the stored final parts, so a resumed stream
+ * accumulates to the same message.
+ */
+function chatsResumeEvents({ chatId }) {
+  const chat = store.getChat(chatId)
+  if (!chat) return { notFound: true }
+  const last = store.lastAssistant(chat.id)
+  if (!last || !last.restorable) return { notFound: true, empty: true }
+
+  const steps = partsProgression(last.parts)
+  const usage = last.usage
+
+  const events = [{ object: 'message', ...openingMessage(last) }]
+  let prev = []
+  for (const step of steps) {
+    events.push({ object: 'message.parts.chunk', id: last.id, delta: diff(prev, step) })
+    prev = step
+  }
+  events.push({ object: 'message.usage', id: last.id, usage })
+  events.push({ object: 'message', ...messagePayload(last) })
+  return { chat, assistant: last, events }
+}
+
+// ---------------------------------------------------------------------------
+// Raw wire format (public /v2 contract)
+// ---------------------------------------------------------------------------
+
 /**
  * Writes one SSE `data:` frame carrying a raw stream event, then waits a tick
  * so chunk boundaries are visible to subscribers (the SDK yields events as
@@ -58,101 +144,90 @@ async function emitEvent(res, event) {
   await sleep(CHUNK_DELAY_MS)
 }
 
+async function writeRawStream(res, events) {
+  res.writeHead(200, sseHeaders())
+  try {
+    for (const event of events) await emitEvent(res, event)
+    res.end()
+  } catch (err) {
+    failStream(res, err)
+  }
+}
+
 /** Streams `chat` + `chat.title` + parts deltas + usage + closing chat. */
 export function chatsCreateStream({ body }) {
-  const { message, title: requestedTitle, privacy, metadata } = body
-  const state = mockResponse(message)
-  const { chat } = store.createChat({ message, title: requestedTitle || state.title, privacy, metadata })
-  const assistant = store.addAssistant(chat.id, { parts: state.parts, content: state.text, usage: store.usageFor(state.text, message) })
-  emitWebhookEvent('chat.created', store.toChatApi(chat))
-  const steps = partsProgression(state.parts)
-  const usage = store.usageFor(state.text, message)
-
-  return {
-    stream: async (res) => {
-      res.writeHead(200, sseHeaders())
-      try {
-        await emitEvent(res, chatEvent(chat))
-        await emitEvent(res, { object: 'chat.title', id: chat.id, delta: chat.title })
-        let prev = []
-        for (const step of steps) {
-          await emitEvent(res, { object: 'message.parts.chunk', id: assistant.id, delta: diff(prev, step) })
-          prev = step
-        }
-        await emitEvent(res, { object: 'message.usage', id: assistant.id, usage })
-        await emitEvent(res, chatEvent(chat))
-        res.end()
-      } catch (err) {
-        failStream(res, err)
-      }
-    },
-  }
+  const { events } = chatsCreateEvents(body)
+  return { stream: (res) => writeRawStream(res, events) }
 }
 
 /** Streams opening message + parts deltas + usage + closing message. */
 export function messagesSendStream({ params, body }) {
-  const chat = store.getChat(params.chatId)
-  if (!chat) return { status: 404, json: { message: 'chat_not_found' } }
-  const { message } = body
-  store.addMessage(chat.id, { role: 'user', content: message })
-  const state = mockResponse(message)
-  const assistant = store.addAssistant(chat.id, { parts: state.parts, content: state.text, usage: store.usageFor(state.text, message) })
-  emitWebhookEvent('message.finished', messagePayload(assistant))
-  const steps = partsProgression(state.parts)
-  const usage = store.usageFor(state.text, message)
+  const built = messagesSendEvents({ chatId: params.chatId, message: body.message })
+  if (built.notFound) return { status: 404, json: { message: 'chat_not_found' } }
+  return { stream: (res) => writeRawStream(res, built.events) }
+}
 
-  return {
-    stream: async (res) => {
-      res.writeHead(200, sseHeaders())
-      try {
-        await emitEvent(res, { object: 'message', ...openingMessage(assistant) })
-        let prev = []
-        for (const step of steps) {
-          await emitEvent(res, { object: 'message.parts.chunk', id: assistant.id, delta: diff(prev, step) })
-          prev = step
-        }
-        await emitEvent(res, { object: 'message.usage', id: assistant.id, usage })
-        await emitEvent(res, { object: 'message', ...messagePayload(assistant) })
-        res.end()
-      } catch (err) {
-        failStream(res, err)
-      }
-    },
+/** Replays the last assistant generation as a raw SSE stream. */
+export function chatsResume({ params }) {
+  const built = chatsResumeEvents({ chatId: params.chatId })
+  if (built.notFound) return { status: 404, json: { message: 'chat_not_found' } }
+  if (built.empty) return { status: 204, json: null }
+  return { stream: (res) => writeRawStream(res, built.events) }
+}
+
+// ---------------------------------------------------------------------------
+// Envelope wire format (@v0-sdk/react V0Transport / app proxy)
+// ---------------------------------------------------------------------------
+
+function emptyError() {
+  return { status: 422, json: { message: 'message is required' } }
+}
+
+async function writeEnvelopeStream(res, events) {
+  res.writeHead(200, sseHeaders())
+  try {
+    const result = createV0StreamResult(pacedEvents(events))
+    const response = result.toResponse()
+    await new Promise((resolve, reject) => {
+      Readable.fromWeb(response.body)
+        .on('error', reject)
+        .pipe(res)
+        .on('finish', resolve)
+        .on('error', reject)
+    })
+  } catch (err) {
+    failStream(res, err)
   }
 }
 
-/**
- * Replays the last assistant generation as SSE. Deterministic — the mock
- * progression is rebuilt from the stored final parts, so a resumed stream
- * accumulates to the same message.
- */
-export function chatsResume({ params }) {
-  const chat = store.getChat(params.chatId)
-  if (!chat) return { status: 404, json: { message: 'chat_not_found' } }
-  const last = store.lastAssistant(chat.id)
-  if (!last || !last.restorable) return { status: 204, json: null }
-
-  const steps = partsProgression(last.parts)
-  const usage = last.usage
-
-  return {
-    stream: async (res) => {
-      res.writeHead(200, sseHeaders())
-      try {
-        await emitEvent(res, { object: 'message', ...openingMessage(last) })
-        let prev = []
-        for (const step of steps) {
-          await emitEvent(res, { object: 'message.parts.chunk', id: last.id, delta: diff(prev, step) })
-          prev = step
-        }
-        await emitEvent(res, { object: 'message.usage', id: last.id, usage })
-        await emitEvent(res, { object: 'message', ...messagePayload(last) })
-        res.end()
-      } catch (err) {
-        failStream(res, err)
-      }
-    },
+async function* pacedEvents(events) {
+  for (const event of events) {
+    await sleep(CHUNK_DELAY_MS)
+    yield event
   }
+}
+
+/** Envelope `{status, event, chat, parts}` stream for `chats.createStream`. */
+export function chatsCreateStreamAI({ body }) {
+  if (!body || typeof body.message !== 'string' || body.message === '') return emptyError()
+  const { events } = chatsCreateEvents(body)
+  return { stream: (res) => writeEnvelopeStream(res, events) }
+}
+
+/** Envelope stream for `messages.sendStream`. */
+export function messagesSendStreamAI({ params, body }) {
+  if (!body || typeof body.message !== 'string' || body.message === '') return emptyError()
+  const built = messagesSendEvents({ chatId: params.chatId, message: body.message })
+  if (built.notFound) return { status: 404, json: { message: 'chat_not_found' } }
+  return { stream: (res) => writeEnvelopeStream(res, built.events) }
+}
+
+/** Envelope stream for `chats.resume`. */
+export function chatsResumeAI({ params }) {
+  const built = chatsResumeEvents({ chatId: params.chatId })
+  if (built.notFound) return { status: 404, json: { message: 'chat_not_found' } }
+  if (built.empty) return { status: 204, json: null }
+  return { stream: (res) => writeEnvelopeStream(res, built.events) }
 }
 
 function failStream(res, err) {

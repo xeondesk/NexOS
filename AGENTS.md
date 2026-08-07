@@ -113,8 +113,16 @@ install the compose file / README port mapping applies as written.
   over expiry, base64url, 12h TTL). Settings persist atomically (tmp + rename) to
   `NEXOS_WEB_STATE_FILE` with a 40ms write debounce and a flush on SIGINT/SIGTERM.
   `/api/v1/exec` + `/api/v1/logs` proxy the log-proxy loopback; exec uses a 120s
-  timeout. When testing with curl, `Content-Type` equality checks must account for
-  `charset` (e.g. `text/html; charset=utf-8`).
+  timeout. The dashboard (`web/index.html`) gains an Assistant panel: it streams
+  the gateway's envelope routes via `POST /api/v1/chat/stream` (`{message,
+  chatId?}` → create or continue) and `POST /api/v1/chat/resume` (`{chatId}`),
+  which `proxyStream()` forwards verbatim to `NEXOS_API_PORT` (8081) SSE —
+  frames are `event: update` `{status,event,chat,parts}` + a trailing `done`, so
+  the client renders `payload.parts` text and never sees the raw API token. The
+  `/health` dependency probe includes `api`; `tests/web-smoke.sh` boots a live
+  gateway (port 9997, loopback) and checks the proxy round-trip + 400/404 error
+  forwarding. When testing with curl, `Content-Type` equality checks must account
+  for `charset` (e.g. `text/html; charset=utf-8`).
 - **API gateway**: `api/api-server.mjs` is a plain `node:http` ESM server
   supervised as the `api` service (`NEXOS_API_PORT`, 8081) implementing the
   v0.app **API v2** contract under `/v2`. The route table is derived at startup

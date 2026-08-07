@@ -81,8 +81,8 @@ start_one terminal
 start_one metrics
 start_one bridge
 start_one git-sign
-start_one web
 start_one api
+start_one web
 
 echo "[entrypoint] NexOS ready — editor :${NEXOS_EDITOR_PORT}, terminal :${NEXOS_TERMINAL_PORT}, control plane :${NEXOS_LOG_PROXY_PORT}, bridge :${NEXOS_BRIDGE_PORT}, git-sign :${NEXOS_GIT_SIGN_PORT}, web :${NEXOS_WEB_PORT}, api :${NEXOS_API_PORT}, preview :${NEXOS_PREVIEW_PORT:-8082}"
 

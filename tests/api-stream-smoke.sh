@@ -46,6 +46,10 @@ check "real v0 SDK round-trip passes" \
   env NEXOS_STREAM_BASE="$BASE/v2" NEXOS_STREAM_TOKEN="$TOKEN" \
     node "$NEXOS_ROOT/tests/api-stream-sdk.mjs"
 
+check "@v0-sdk/react V0Transport round-trip passes" \
+  env NEXOS_STREAM_BASE="$BASE/v2" \
+    node "$NEXOS_ROOT/tests/api-react-sdk.mjs"
+
 # --- SSE framing (raw wire format) ----------------------------------------
 CHAT_STREAM=$(
   curl -s -X POST -H 'Content-Type: application/json' \
@@ -53,24 +57,25 @@ CHAT_STREAM=$(
     -d '{"message":"build me a landing page","title":"Curl chat"}' \
     "$BASE/v2/chats/stream"
 )
+echo "$CHAT_STREAM" >"$TMP/chat-stream.txt"
 
 check "createStream responds 200 text/event-stream" \
   [ "$(curl -s -o /dev/null -w '%{content_type}' -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" -d '{"message":"hi"}' "$BASE/v2/chats/stream")" = "text/event-stream; charset=utf-8" ]
 check "createStream emits event: update frames" \
-  sh -c "echo '$CHAT_STREAM' | grep -q 'event: update'"
+  grep -q 'event: update' "$TMP/chat-stream.txt"
 check "createStream opens with a chat event" \
-  sh -c "echo '$CHAT_STREAM' | grep -q '\"object\":\"chat\"'"
+  grep -q '"object":"chat"' "$TMP/chat-stream.txt"
 check "createStream emits a title delta event" \
-  sh -c "echo '$CHAT_STREAM' | grep -q '\"object\":\"chat.title\"'"
+  grep -q '"object":"chat.title"' "$TMP/chat-stream.txt"
 check "createStream emits parts.chunk deltas" \
-  sh -c "echo '$CHAT_STREAM' | grep -q '\"object\":\"message.parts.chunk\"'"
+  grep -q '"object":"message.parts.chunk"' "$TMP/chat-stream.txt"
 check "createStream emits message.usage" \
-  sh -c "echo '$CHAT_STREAM' | grep -q '\"object\":\"message.usage\"'"
+  grep -q '"object":"message.usage"' "$TMP/chat-stream.txt"
 check "createStream closes with a chat snapshot" \
-  sh -c "echo '$CHAT_STREAM' | grep -q '\"object\":\"chat\",\"id\":\"chat_'"
+  grep -q '"object":"chat","id":"chat_' "$TMP/chat-stream.txt"
 
 # --- sendStream + resume via curl -----------------------------------------
-CHAT_ID=$(echo "$CHAT_STREAM" | grep -o '"object":"chat","id":"chat_[a-f0-9]*"' | head -1 | grep -o 'chat_[a-f0-9]*')
+CHAT_ID=$(grep -o '"object":"chat","id":"chat_[a-f0-9]*"' "$TMP/chat-stream.txt" | head -1 | grep -o 'chat_[a-f0-9]*')
 
 SEND_STREAM=$(
   curl -s -X POST -H 'Content-Type: application/json' \
@@ -78,18 +83,20 @@ SEND_STREAM=$(
     -d '{"message":"add a footer"}' \
     "$BASE/v2/chats/$CHAT_ID/messages/stream"
 )
+echo "$SEND_STREAM" >"$TMP/send-stream.txt"
 check "sendStream opens with a message snapshot" \
-  sh -c "echo '$SEND_STREAM' | grep -q '\"object\":\"message\",\"id\":\"msg_'"
+  grep -q '"object":"message","id":"msg_' "$TMP/send-stream.txt"
 check "sendStream closes with the final message snapshot" \
-  sh -c "echo '$SEND_STREAM' | grep -q '\"finishReason\":\"stop\"'"
+  grep -q '"finishReason":"stop"' "$TMP/send-stream.txt"
 
 RESUME=$(
   curl -s -X POST -H "Authorization: Bearer $TOKEN" "$BASE/v2/chats/$CHAT_ID/resume"
 )
+echo "$RESUME" >"$TMP/resume-stream.txt"
 check "resume replays a stream" \
-  sh -c "echo '$RESUME' | grep -q '\"object\":\"message.parts.chunk\"'"
+  grep -q '"object":"message.parts.chunk"' "$TMP/resume-stream.txt"
 check "resume closes with the same finish" \
-  sh -c "echo '$RESUME' | grep -q '\"finishReason\":\"stop\"'"
+  grep -q '"finishReason":"stop"' "$TMP/resume-stream.txt"
 
 # --- error semantics -------------------------------------------------------
 check "sendStream to unknown chat -> 404" \

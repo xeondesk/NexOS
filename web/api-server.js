@@ -23,6 +23,7 @@
 //   NEXOS_LOG_PROXY_PORT  control-plane log/exec endpoint (default 7682)
 //   NEXOS_BRIDGE_PORT     editor bridge (default 9876)
 //   NEXOS_GIT_SIGN_PORT   git-sign health/pubkey (default 9877)
+//   NEXOS_API_PORT        v2 API gateway loopback (default 8081)
 //
 // Endpoints:
 //   GET  /                     -> web/index.html
@@ -37,6 +38,8 @@
 //   GET  /api/v1/bridge        -> editor bridge status
 //   GET  /api/v1/settings      -> persisted dashboard settings
 //   PUT  /api/v1/settings      -> persist dashboard settings
+//   POST /api/v1/chat/stream   -> v2 chat turn (SSE) via the gateway envelope routes
+//   POST /api/v1/chat/resume   -> resume last generation (SSE)
 
 const http = require('http')
 const fs = require('fs')
@@ -56,6 +59,7 @@ const RUN_DIR = process.env.NEXOS_RUN_DIR || path.join(ROOT, 'state', 'run')
 const LOG_PROXY_PORT = parseInt(process.env.NEXOS_LOG_PROXY_PORT || '7682', 10)
 const BRIDGE_PORT = parseInt(process.env.NEXOS_BRIDGE_PORT || '9876', 10)
 const GIT_SIGN_PORT = parseInt(process.env.NEXOS_GIT_SIGN_PORT || '9877', 10)
+const API_PORT = parseInt(process.env.NEXOS_API_PORT || '8081', 10)
 const INDEX_HTML = path.join(__dirname, 'index.html')
 
 const SESSION_COOKIE = 'nexos_session'
@@ -167,6 +171,54 @@ function proxyRequest(targetPort, method, targetPath, headers, body, timeoutMs) 
     req.on('timeout', () => {
       req.destroy(new Error('timeout'))
     })
+    if (body !== undefined) req.write(body)
+    req.end()
+  })
+}
+
+/**
+ * Streams an upstream response body to the browser without buffering (used for
+ * the v2 chat SSE proxy). Forwards the upstream status + `content-type`, pipes
+ * each chunk through, and tears down both sides on abort/error.
+ */
+function proxyStream(targetPort, method, targetPath, headers, body, res) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port: targetPort,
+        method,
+        path: targetPath,
+        headers,
+      },
+      (upstream) => {
+        res.writeHead(upstream.statusCode || 502, {
+          'Content-Type':
+            upstream.headers['content-type'] || 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+          'X-Content-Type-Options': 'nosniff',
+        })
+        upstream.on('data', (chunk) => {
+          if (!res.destroyed) res.write(chunk)
+        })
+        upstream.on('end', () => {
+          if (!res.destroyed) res.end()
+          resolve()
+        })
+        upstream.on('error', (err) => {
+          if (!res.destroyed) res.destroy()
+          reject(err)
+        })
+        req.on('close', () => upstream.destroy())
+      },
+    )
+    req.on('error', (err) => {
+      if (!res.destroyed) res.destroy()
+      reject(err)
+    })
+    res.on('close', () => req.destroy())
     if (body !== undefined) req.write(body)
     req.end()
   })
@@ -402,10 +454,11 @@ async function handle(req, res) {
   }
 
   if (req.method === 'GET' && pathname === '/health') {
-    const [logProxy, bridge, gitSign] = await Promise.all([
+    const [logProxy, bridge, gitSign, api] = await Promise.all([
       probeHealth(LOG_PROXY_PORT, '/health'),
       probeHealth(BRIDGE_PORT, '/status'),
       probeHealth(GIT_SIGN_PORT, '/health'),
+      probeHealth(API_PORT, '/health'),
     ])
     sendJson(res, 200, {
       status: 'ok',
@@ -418,6 +471,7 @@ async function handle(req, res) {
         logProxy: logProxy.reachable ? 'up' : 'down',
         bridge: bridge.reachable ? 'up' : 'down',
         gitSign: gitSign.reachable ? 'up' : 'down',
+        api: api.reachable ? 'up' : 'down',
       },
     })
     return
@@ -457,6 +511,58 @@ async function handle(req, res) {
 
   if (!isAuthorized(req)) {
     sendJson(res, 401, { error: 'unauthorized', message: 'Authentication required.' })
+    return
+  }
+
+  // --- chat (v2 envelope streaming proxy for the dashboard) ----------------
+  // POST /api/v1/chat/stream  { message, chatId? } -> create or send turn
+  // POST /api/v1/chat/resume  { chatId }           -> resume last generation
+  // Both stream SSE back to the browser; the gateway's loopback is trusted so
+  // no NEXOS_API_TOKEN is forwarded to the browser.
+  if (req.method === 'POST' && pathname === '/api/v1/chat/stream') {
+    const body = await parseJsonBody(req)
+    if (typeof body.message !== 'string' || !body.message.trim()) {
+      return sendJson(res, 400, { error: 'message is required' })
+    }
+    const targetPath = body.chatId
+      ? `/v2/ai/chats/${encodeURIComponent(body.chatId)}/messages/stream`
+      : '/v2/ai/chats/stream'
+    try {
+      await proxyStream(
+        API_PORT,
+        'POST',
+        targetPath,
+        { 'Content-Type': 'application/json' },
+        JSON.stringify({ message: body.message }),
+        res,
+      )
+    } catch (err) {
+      if (!res.destroyed) {
+        sendJson(res, 502, { error: 'api_unavailable', message: err.message })
+      }
+    }
+    return
+  }
+
+  if (req.method === 'POST' && pathname === '/api/v1/chat/resume') {
+    const body = await parseJsonBody(req)
+    if (typeof body.chatId !== 'string' || !body.chatId) {
+      return sendJson(res, 400, { error: 'chatId is required' })
+    }
+    try {
+      await proxyStream(
+        API_PORT,
+        'POST',
+        `/v2/ai/chats/${encodeURIComponent(body.chatId)}/resume`,
+        {},
+        undefined,
+        res,
+      )
+    } catch (err) {
+      if (!res.destroyed) {
+        sendJson(res, 502, { error: 'api_unavailable', message: err.message })
+      }
+    }
     return
   }
 

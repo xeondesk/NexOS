@@ -253,6 +253,28 @@ const STREAM_OPS = {
   'chats.resume': streamHandlers.chatsResume,
 }
 
+/**
+ * App-side envelope routes for the `@v0-sdk/react` `V0Transport`. These are
+ * NOT part of the public v2 spec (openapi-v2.json is the raw-event contract);
+ * they mirror v0's own caller-owned proxy routes, which emit a full
+ * `V0StreamUpdate` envelope per SSE frame plus a trailing `done` frame.
+ */
+function matchAIStreamRoute(method, inner) {
+  if (method !== 'POST') return null
+  if (inner === '/ai/chats/stream') {
+    return { operationId: 'ai.chats.createStream', handler: streamHandlers.chatsCreateStreamAI, params: {} }
+  }
+  let m = /^\/ai\/chats\/([^/]+)\/messages\/stream$/.exec(inner)
+  if (m) {
+    return { operationId: 'ai.messages.sendStream', handler: streamHandlers.messagesSendStreamAI, params: { chatId: m[1] } }
+  }
+  m = /^\/ai\/chats\/([^/]+)\/resume$/.exec(inner)
+  if (m) {
+    return { operationId: 'ai.chats.resume', handler: streamHandlers.chatsResumeAI, params: { chatId: m[1] } }
+  }
+  return null
+}
+
 const JSON_OPS = {
   'chats.create': chatHandlers.chatsCreate,
   'chats.createAsync': chatHandlers.chatsCreateAsync,
@@ -361,6 +383,23 @@ async function handle(req, res) {
     const inner = pathname.slice(3).replace(/\/$/, '') || '/'
     if (!isAuthorized(req)) {
       sendJson(res, 401, { message: 'Unauthorized' })
+      return
+    }
+    const ai = matchAIStreamRoute(req.method, inner)
+    if (ai) {
+      const body = ['POST', 'PUT', 'PATCH'].includes(req.method)
+        ? await parseJsonBody(req)
+        : {}
+      const query = Object.fromEntries(url.searchParams.entries())
+      const result = ai.handler({ params: ai.params, body, query })
+      if (typeof result.stream === 'function') {
+        await result.stream(res)
+        return
+      }
+      if (result.status >= 200 && result.status < 300) {
+        emitForOperation(ai.operationId, result.json)
+      }
+      sendJson(res, result.status, result.json)
       return
     }
     const match = matchRoute(req.method, inner)
