@@ -53,10 +53,10 @@ check "POST /v2/chats/stream implements chats.createStream (200 SSE)" \
   [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"message":"hi"}' "$BASE/v2/chats/stream")" = "200" ]
 check "POST /v2/chats/stream emits SSE" \
   sh -c "curl -s -X POST -H 'Content-Type: application/json' -d '{\"message\":\"hi\"}' '$BASE/v2/chats/stream' | grep -q 'event: update'"
-check "GET /v2/chats/{id}/preview routes to chats.getPreview (501)" \
-  [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v2/chats/chat_abc/preview")" = "501" ]
-check "GET /v2/mcp-servers routes to mcpServers.list (501)" \
-  [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v2/mcp-servers")" = "501" ]
+check "GET /v2/chats/{id}/preview 404s for an unknown chat" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v2/chats/chat_abc/preview")" = "404" ]
+check "GET /v2/mcp-servers implements mcpServers.list (200)" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v2/mcp-servers")" = "200" ]
 
 # --- contract validation ------------------------------------------------------
 check "chats.create without message -> 422" \

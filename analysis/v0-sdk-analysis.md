@@ -175,13 +175,24 @@ Phased development plan. Each phase is independently shippable + testable.
 - [x] `from-files` / `from-zip` / `from-repo` (local: zip extract into workspace;
       repo: `git clone` — NexOS already owns git infra).
 
-### Phase 3 — preview + MCP + webhooks
-- [ ] `getPreview` → `{url, token, expiresAt}` over the local preview origin
-      (workspace preview server, e.g. `next dev`/`vite` behind a hostname).
-- [ ] Port `preview-proxy.mjs` as a supervised preview ingress with the
-      origin-isolation + `x-v0-preview-token` semantics.
-- [ ] `mcp-servers` CRUD (persisted, with auth) — maps to real MCP connections.
-- [ ] `hooks` webhook CRUD + delivery loop (event → POST url, retries).
+### Phase 3 — preview + MCP + webhooks ✅ (commit `<P3_COMMIT>`)
+- [x] `getPreview` → `{url, token, expiresAt}` (HMAC-signed, chat-scoped, 30 min
+      TTL) over the preview ingress; `null` while the chat has no files; 404 for
+      unknown chats (`api/lib/preview.mjs` + `meta-handlers.mjs`).
+- [x] Port `preview-proxy.mjs` as a preview ingress (origin-isolated, hop-by-hop +
+      `x-vercel-*`/`x-forwarded-*`/`x-envoy-*` header stripping, `private,
+      no-store` pinning, `x-v0-preview-refresh: 1` → `/_loading` fallback). The
+      default upstream is an internal mock static server over the chat's ingested
+      files; `NEXOS_PREVIEW_UPSTREAM` points it at a real dev server instead.
+- [x] `mcp-servers` CRUD (persisted, with auth) — maps to real MCP connections.
+- [x] `hooks` webhook CRUD + delivery loop (event → POST url, retries, delivery
+      log at `state/api/webhook-deliveries.jsonl`).
+- [x] `settings.preview-hosts` GET/PUT (`TrustedPreviewHosts {hosts[]}`).
+- [x] Verified: `tests/api-meta-smoke.sh` (27 checks) + `tests/api-preview-smoke.sh`
+      (15 checks) + ingress unit coverage in `tests/api-preview-smoke.sh`; full
+      `npm test` green.
+- [ ] `getConnectStatus`, `downloadFiles` (`GET /chats/{chatId}/files/download`),
+      `deploy`, `createVercelProject`, `messages.resolve*` (stream) still 501.
 
 ### Phase 4 — React/SDK client compatibility
 - [ ] Run `@v0-sdk/react` `V0Transport` against local proxy routes; ship the

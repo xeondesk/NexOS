@@ -1,4 +1,4 @@
-// NexOS v0-compatible API gateway (Phase 2: CRUD + persistence).
+// NexOS v0-compatible API gateway (Phase 3: previews + MCP + webhooks).
 //
 // Implements the v0.app production API v2 contract served at
 // https://api.v0.dev/v2. The route table is derived at startup from
@@ -6,10 +6,12 @@
 // https://github.com/vercel/v0-sdk) so the mounted surface can never drift
 // from the spec. Phase 1 added the streaming ops (`chats.createStream`,
 // `messages.sendStream`, `chats.resume`) on a deterministic mock backend.
-// Phase 2 adds chat/message CRUD + async variants + from-files/zip/repo,
-// persisted atomically under NEXOS_API_STATE_DIR (see api/lib/chat-store.mjs).
+// Phase 2 added chat/message CRUD + async variants + from-files/zip/repo,
+// persisted atomically under NEXOS_API_STATE_DIR. Phase 3 adds chat previews
+// (signed URL + origin-isolated ingress port of the SDK preview-proxy),
+// mcp-servers CRUD, webhooks CRUD + delivery loop, and preview-hosts settings.
 // Remaining operations return 501 until the phased plan implements them
-// (previews, MCP servers, webhooks next).
+// (downloadFiles, connect/deploy, messages.resolve*, Vercel-only ops).
 //
 // Base URL: the API is served under `/v2` (matching api.v0.dev/v2). The SDK
 // client connects with `createV0Client({ baseUrl: 'http://127.0.0.1:<port>/v2' })`.
@@ -24,7 +26,14 @@
 //   NEXOS_API_HOST       bind host (default 127.0.0.1; 0.0.0.0 when
 //                        NEXOS_ALLOW_REMOTE=true)
 //   NEXOS_API_TOKEN      optional bearer token for remote clients
-//   NEXOS_API_STATE_DIR  persistence dir for chat/message state (Phase 2)
+//   NEXOS_API_STATE_DIR  persistence dir for chat/message/meta state
+//   NEXOS_PREVIEW_PORT   preview ingress port (default 8082; separate origin
+//                        from the API, per the origin-isolation requirement)
+//   NEXOS_PREVIEW_UPSTREAM  base URL of the real preview origin (next/vite dev
+//                        server). Unset = built-in mock upstream serving the
+//                        chat's ingested files.
+//   NEXOS_API_PREVIEW_SECRET  HMAC secret for preview tokens (default is fine
+//                        for loopback; set it when publishing previews).
 
 import http from 'node:http'
 import fs from 'node:fs'
@@ -33,6 +42,9 @@ import { fileURLToPath } from 'node:url'
 import * as store from './lib/chat-store.mjs'
 import * as streamHandlers from './lib/stream-handlers.mjs'
 import * as chatHandlers from './lib/chat-handlers.mjs'
+import * as metaHandlers from './lib/meta-handlers.mjs'
+import * as webhooks from './lib/webhooks.mjs'
+import { createPreviewServer } from './lib/preview.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..')
@@ -42,6 +54,10 @@ const HOST = process.env.NEXOS_API_HOST || (allowRemote ? '0.0.0.0' : '127.0.0.1
 const TOKEN = process.env.NEXOS_API_TOKEN || ''
 const STATE_DIR = process.env.NEXOS_API_STATE_DIR || path.join(ROOT, 'state', 'api')
 const OPENAPI_FILE = path.join(__dirname, 'openapi-v2.json')
+const PREVIEW_PORT = parseInt(process.env.NEXOS_PREVIEW_PORT || '8082', 10)
+const PREVIEW_HOST = process.env.NEXOS_PREVIEW_HOST || (allowRemote ? '0.0.0.0' : '127.0.0.1')
+const PREVIEW_SECRET = process.env.NEXOS_API_PREVIEW_SECRET || 'nexos-preview-token'
+const PREVIEW_UPSTREAM = process.env.NEXOS_PREVIEW_UPSTREAM || `http://127.0.0.1:${PREVIEW_PORT}/_upstream`
 
 const startedAt = new Date().toISOString()
 const MAX_BODY_BYTES = 10_000_000
@@ -205,7 +221,7 @@ function sendJson(res, statusCode, data, extraHeaders = {}) {
     'X-Content-Type-Options': 'nosniff',
     ...extraHeaders,
   })
-  res.end(data === undefined || data === null ? undefined : JSON.stringify(data))
+  res.end(data === undefined ? undefined : JSON.stringify(data))
 }
 
 function parseJsonBody(req) {
@@ -251,11 +267,24 @@ const JSON_OPS = {
   'chats.createFromRepo': chatHandlers.chatsCreateFromRepo,
   'chats.getFiles': chatHandlers.chatsGetFiles,
   'chats.updateFiles': chatHandlers.chatsUpdateFiles,
+  'chats.getPreview': metaHandlers.chatsGetPreview,
   'messages.list': chatHandlers.messagesList,
   'messages.send': chatHandlers.messagesSend,
   'messages.sendAsync': chatHandlers.messagesSendAsync,
   'messages.get': chatHandlers.messagesGet,
   'messages.stop': chatHandlers.messagesStop,
+  'mcpServers.create': metaHandlers.mcpServersCreate,
+  'mcpServers.list': metaHandlers.mcpServersList,
+  'mcpServers.get': metaHandlers.mcpServersGet,
+  'mcpServers.update': metaHandlers.mcpServersUpdate,
+  'mcpServers.delete': metaHandlers.mcpServersDelete,
+  'webhooks.create': metaHandlers.webhooksCreate,
+  'webhooks.list': metaHandlers.webhooksList,
+  'webhooks.get': metaHandlers.webhooksGet,
+  'webhooks.update': metaHandlers.webhooksUpdate,
+  'webhooks.delete': metaHandlers.webhooksDelete,
+  'settings.getPreviewHosts': metaHandlers.settingsGetPreviewHosts,
+  'settings.setPreviewHosts': metaHandlers.settingsSetPreviewHosts,
 }
 
 async function handleOperation({ route, params, body, query }) {
@@ -264,6 +293,35 @@ async function handleOperation({ route, params, body, query }) {
   return {
     status: 501,
     json: { message: `not_implemented:${route.operationId}` },
+  }
+}
+
+/** Fires lifecycle webhook events after successful JSON mutations. */
+function emitForOperation(operationId, json) {
+  switch (operationId) {
+    case 'chats.create':
+    case 'chats.createAsync':
+    case 'chats.createFromFiles':
+    case 'chats.createFromZip':
+    case 'chats.createFromRepo':
+    case 'chats.duplicate': {
+      const chat = json && (json.chat || (json.id ? json : null))
+      if (chat && chat.id) webhooks.emitWebhookEvent('chat.created', chat)
+      break
+    }
+    case 'chats.update': {
+      if (json && json.id) webhooks.emitWebhookEvent('chat.updated', json)
+      break
+    }
+    case 'chats.delete': {
+      if (json && json.chatId) webhooks.emitWebhookEvent('chat.deleted', json)
+      break
+    }
+    case 'messages.send':
+    case 'messages.sendAsync': {
+      if (json && json.id) webhooks.emitWebhookEvent('message.finished', json)
+      break
+    }
   }
 }
 
@@ -329,6 +387,9 @@ async function handle(req, res) {
       await result.stream(res)
       return
     }
+    if (result.status >= 200 && result.status < 300) {
+      emitForOperation(match.route.operationId, result.json)
+    }
     sendJson(res, result.status, result.json)
     return
   }
@@ -348,17 +409,34 @@ server.on('error', (err) => {
   process.exit(1)
 })
 
+const previewServer = createPreviewServer({
+  stateDir: STATE_DIR,
+  secret: PREVIEW_SECRET,
+  forwardBase: PREVIEW_UPSTREAM,
+})
+
+previewServer.on('error', (err) => {
+  console.error(`[nexos:api] preview server error: ${err.message}`)
+  process.exit(1)
+})
+
 function shutdown() {
   server.close(() => process.exit(0))
+  previewServer.close()
   setTimeout(() => process.exit(0), 1000).unref()
 }
 
 server.listen(PORT, HOST, () => {
   fs.mkdirSync(STATE_DIR, { recursive: true })
   store.initStore({ dir: STATE_DIR })
+  webhooks.initWebhooks({ dir: STATE_DIR })
   const persisted = store.listChats({ limit: 1000 }).chats.length
   console.log(`[nexos:api] v2 API gateway on ${HOST}:${PORT} (${routes.length} operations from ${path.basename(OPENAPI_FILE)})${TOKEN ? ' (auth enabled)' : ' (no auth)'}`)
   console.log(`[nexos:api] state dir: ${STATE_DIR} (${persisted} chats loaded)`)
+  previewServer.listen(PREVIEW_PORT, PREVIEW_HOST, () => {
+    const upstream = PREVIEW_UPSTREAM.includes('/_upstream') ? 'mock files upstream' : PREVIEW_UPSTREAM
+    console.log(`[nexos:api] preview ingress on ${PREVIEW_HOST}:${PREVIEW_PORT} (${upstream})`)
+  })
 })
 
 process.on('SIGTERM', shutdown)

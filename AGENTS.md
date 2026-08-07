@@ -127,22 +127,37 @@ install the compose file / README port mapping applies as written.
   but unimplemented operations return `501 {"message":"not_implemented:<op>"}`.
   Auth mirrors the portal: loopback trusted, `NEXOS_API_TOKEN` bearer for remote.
   State persists to `NEXOS_API_STATE_DIR` (default `state/api/`): `chats/<id>.json`,
-  `files/<id>.json`, `workspace/<chatId>/` (from-zip/repo extraction). This is
-  Phase 2 — streaming + CRUD are live: `chats.createStream`, `messages.sendStream`
+  `files/<id>.json`, `workspace/<chatId>/` (from-zip/repo extraction), plus
+  `mcp-servers.json`, `webhooks.json`, `preview-hosts.json` and
+  `webhook-deliveries.jsonl` (Phase 3). Phase 3 — streaming + CRUD + previews +
+  MCP + webhooks are live: `chats.createStream`, `messages.sendStream`
   and `chats.resume` emit the raw `ChatStreamEvent`/`MessageStreamEvent` wire
   format on a deterministic mock backend; the full chat/message CRUD matrix
   (create/list/get/update/delete/duplicate, async variants, restore-message,
   from-files/zip/repo, getFiles/updateFiles) is implemented against the
-  persistent store (`api/lib/{chat-store,chat-handlers,from}.mjs`). Consumers are
+  persistent store (`api/lib/{chat-store,chat-handlers,from}.mjs`). Phase 3 adds
+  `chats.getPreview` (HMAC-signed chat-scoped token, 30 min TTL,
+  `NEXOS_API_PREVIEW_SECRET`; `null` while the chat has no files), a preview
+  ingress on `NEXOS_PREVIEW_PORT` (8082) ported from the SDK's `preview-proxy.ts`
+  in `api/lib/preview.mjs` (origin-isolated; strips hop-by-hop + `x-vercel-*`/
+  `x-forwarded-*`/`x-envoy-*`; pins `Cache-Control: private, no-store`;
+  `x-v0-preview-refresh: 1` → `/_loading` fallback; default upstream is a mock
+  static server over the chat's ingested files, override with
+  `NEXOS_PREVIEW_UPSTREAM`), `mcp-servers` + `hooks` CRUD persisted via
+  `api/lib/meta-store.mjs`, a webhook delivery loop in `api/lib/webhooks.mjs`
+  (events `chat.created|chat.updated|chat.deleted|message.finished`, chat-scoped
+  hooks via `chatId`, 3 attempts w/ backoff, delivery log), and
+  `settings.preview-hosts` GET/PUT. Consumers are
   `tests/api-stream-sdk.mjs` (real `v0` npm SDK, devDependency only) +
-  `tests/api-crud-smoke.sh` (curl-level CRUD + from-* + persistence restart).
+  `tests/api-crud-smoke.sh` + `tests/api-meta-smoke.sh` (MCP/webhooks/settings,
+  incl. delivery + chat-scoped filtering) + `tests/api-preview-smoke.sh`
+  (getPreview + ingress).
   `api/lib/diffpatch.mjs` + `api/lib/v0-stream.mjs` are ports of the SDK's
   `stream/{diffpatch,result}.ts` — the v0 append fast-path `[[idx,...,suffix],9,9]`
   only fires for array-item-level string appends (integer-only paths);
   `parts[i].text` growth travels as plain jsondiffpatch deltas. Still 501 per the
-  phased plan (`analysis/v0-sdk-analysis.md`): `getPreview`, `mcp-servers`,
-  webhooks, `downloadFiles`, `getConnectStatus`, `deploy`, `createVercelProject`,
-  `messages.resolve*`.
+  phased plan (`analysis/v0-sdk-analysis.md`): `getConnectStatus`,
+  `downloadFiles`, `deploy`, `createVercelProject`, `messages.resolve*`.
 
 ## Verification flow
 

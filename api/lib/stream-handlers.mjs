@@ -15,6 +15,7 @@ import { diff } from './diffpatch.mjs'
 import { formatSse } from './v0-stream.mjs'
 import * as store from './chat-store.mjs'
 import { mockResponse, partsProgression } from './mock-generator.mjs'
+import { emitWebhookEvent } from './webhooks.mjs'
 
 const CHUNK_DELAY_MS = 60
 
@@ -63,6 +64,7 @@ export function chatsCreateStream({ body }) {
   const state = mockResponse(message)
   const { chat } = store.createChat({ message, title: requestedTitle || state.title, privacy, metadata })
   const assistant = store.addAssistant(chat.id, { parts: state.parts, content: state.text, usage: store.usageFor(state.text, message) })
+  emitWebhookEvent('chat.created', store.toChatApi(chat))
   const steps = partsProgression(state.parts)
   const usage = store.usageFor(state.text, message)
 
@@ -95,6 +97,7 @@ export function messagesSendStream({ params, body }) {
   store.addMessage(chat.id, { role: 'user', content: message })
   const state = mockResponse(message)
   const assistant = store.addAssistant(chat.id, { parts: state.parts, content: state.text, usage: store.usageFor(state.text, message) })
+  emitWebhookEvent('message.finished', messagePayload(assistant))
   const steps = partsProgression(state.parts)
   const usage = store.usageFor(state.text, message)
 

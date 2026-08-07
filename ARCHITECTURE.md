@@ -127,5 +127,13 @@ host bootstrap.
     persistence: create/list/get/update/delete/duplicate, async variants,
     restore-message, from-files/zip/repo, getFiles/updateFiles against a persistent
     store (`state/api/`: `chats/`, `files/`, `workspace/`), exercised by
-    `tests/api-crud-smoke.sh` incl. a restart-persistence check. Previews, MCP
-    servers and webhooks land in later phases — plan in `analysis/v0-sdk-analysis.md`.
+    `tests/api-crud-smoke.sh` incl. a restart-persistence check. Phase 3 =
+    previews + MCP + webhooks: `chats.getPreview` mints HMAC-signed chat-scoped
+    tokens for a preview ingress on `NEXOS_PREVIEW_PORT` (`api/lib/preview.mjs`,
+    port of the SDK `preview-proxy.ts`: origin isolation, header stripping,
+    `private, no-store` pinning, `x-v0-preview-refresh` → `/_loading`, mock
+    upstream over the chat's files); `mcp-servers` + `hooks` CRUD persisted via
+    `api/lib/meta-store.mjs`; a webhook delivery loop (`api/lib/webhooks.mjs`,
+    events `chat.created/updated/deleted` + `message.finished`, chat-scoped
+    hooks, retries, `webhook-deliveries.jsonl` log); `settings.preview-hosts`
+    GET/PUT. Covered by `tests/api-meta-smoke.sh` + `tests/api-preview-smoke.sh`.

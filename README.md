@@ -143,8 +143,16 @@ layer: create/list/get/update/delete/duplicate, async variants, restore-message,
 `from-files`/`from-zip`/`from-repo` (zip extraction + `git clone` into a local
 workspace), `getFiles`/`updateFiles` — all persisted under `NEXOS_API_STATE_DIR`
 (default `state/api/`) and exercised by `tests/api-crud-smoke.sh`, including a
-restart-persistence check. Previews, MCP servers and webhooks land in later
-phases (see `analysis/v0-sdk-analysis.md`).
+restart-persistence check. Phase 3 added previews, MCP servers and webhooks:
+`chats.getPreview` mints a signed, chat-scoped, 30-minute token pointing at a
+preview ingress (`NEXOS_PREVIEW_PORT`, 8082) that forwards to the chat's preview
+origin with SDK `preview-proxy.ts` semantics (origin isolation, header hygiene,
+`private, no-store` pinning, `x-v0-preview-refresh` → `/_loading` fallback; a
+built-in mock upstream serves the chat's ingested files). `mcp-servers` and
+`hooks` are full CRUD with persistence, and lifecycle events
+(`chat.created/updated/deleted`, `message.finished`) are delivered to subscribed
+webhook URLs with retries (see `state/api/webhook-deliveries.jsonl`). Covered by
+`tests/api-meta-smoke.sh` + `tests/api-preview-smoke.sh`.
 
 Auth mirrors the portal: loopback always trusted, `NEXOS_API_TOKEN` required as
 `Authorization: Bearer <token>` from non-loopback clients (which is exactly how
