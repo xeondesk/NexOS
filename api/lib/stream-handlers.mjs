@@ -30,15 +30,6 @@ function sseHeaders() {
   }
 }
 
-function usageFor(text, prompt) {
-  const input = Math.max(1, Math.round(String(prompt || '').length / 4))
-  const output = Math.max(1, Math.round(text.length / 4))
-  return {
-    tokens: { input, output, cacheRead: 0, cacheWrite: 0, total: input + output },
-    creditsCost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-  }
-}
-
 function chatEvent(chat) {
   return { object: 'chat', ...store.toChatApi(chat) }
 }
@@ -71,9 +62,9 @@ export function chatsCreateStream({ body }) {
   const { message, title: requestedTitle, privacy, metadata } = body
   const state = mockResponse(message)
   const { chat } = store.createChat({ message, title: requestedTitle || state.title, privacy, metadata })
-  const assistant = store.addAssistant(chat.id, { parts: state.parts, content: state.text, usage: usageFor(state.text, message) })
+  const assistant = store.addAssistant(chat.id, { parts: state.parts, content: state.text, usage: store.usageFor(state.text, message) })
   const steps = partsProgression(state.parts)
-  const usage = usageFor(state.text, message)
+  const usage = store.usageFor(state.text, message)
 
   return {
     stream: async (res) => {
@@ -103,9 +94,9 @@ export function messagesSendStream({ params, body }) {
   const { message } = body
   store.addMessage(chat.id, { role: 'user', content: message })
   const state = mockResponse(message)
-  const assistant = store.addAssistant(chat.id, { parts: state.parts, content: state.text, usage: usageFor(state.text, message) })
+  const assistant = store.addAssistant(chat.id, { parts: state.parts, content: state.text, usage: store.usageFor(state.text, message) })
   const steps = partsProgression(state.parts)
-  const usage = usageFor(state.text, message)
+  const usage = store.usageFor(state.text, message)
 
   return {
     stream: async (res) => {

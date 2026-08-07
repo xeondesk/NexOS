@@ -102,9 +102,9 @@ check "createStream without message -> 422" \
   [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" -d '{}' "$BASE/v2/chats/stream")" = "422" ]
 check "sendStream without message -> 422" \
   [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" -d '{}' "$BASE/v2/chats/$CHAT_ID/messages/stream")" = "422" ]
-check "chats.create still 501 in Phase 1" \
-  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" -d '{"message":"hi"}' "$BASE/v2/chats")" = "501" ]
-check "resolveStream still 501 in Phase 1" \
+check "chats.create implemented in Phase 2 (200)" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" -d '{"message":"hi"}' "$BASE/v2/chats")" = "200" ]
+check "resolveStream still 501" \
   [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" -d '{"message":"hi"}' "$BASE/v2/chats/$CHAT_ID/messages/resolve/stream")" = "501" ]
 
 if [ "$FAIL" -eq 0 ]; then

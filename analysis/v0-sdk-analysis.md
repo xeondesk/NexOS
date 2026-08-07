@@ -155,7 +155,7 @@ Phased development plan. Each phase is independently shippable + testable.
 - [ ] Generated types: run `openapi-ts` in a scratch dir, vendor
   `types.gen.ts` into `api/types.mjs`-importable form (or keep TS + build).
 
-### Phase 1 — streaming wire format ✅ (in-progress)
+### Phase 1 — streaming wire format ✅ (commit `3d440ed`)
 - [x] Port `diffpatch.mjs` (jsondiffpatch + `[9,9]` append delta) + unit tests.
 - [x] Port `v0-stream.mjs`: `formatSse`, SSE parse, `SharedV0StreamResult`,
   `applyStreamEvent`, `createV0StreamResult`/`readV0Stream`.
@@ -167,12 +167,12 @@ Phased development plan. Each phase is independently shippable + testable.
   (`tests/api-stream-unit.mjs`).
 - [ ] `messages.resolveStream` + restartable stream persistence (Phase 2 store).
 
-### Phase 2 — chat/message CRUD + persistence
-- [ ] Chats: create/list/get/update/delete/duplicate; Messages:
-      list(send/get/stop; restore-message. Persist to `state/api/` (JSON + atomic
+### Phase 2 — chat/message CRUD + persistence ✅ (commit `…`)
+- [x] Chats: create/list/get/update/delete/duplicate; Messages:
+      list/send/get/stop; restore-message. Persist to `state/api/` (JSON + atomic
       writes, reuse web-portal settings write pattern).
-- [ ] Async variants (`createAsync`, `sendAsync`) → poll-able jobs dir.
-- [ ] `from-files` / `from-zip` / `from-repo` (local: zip extract into workspace;
+- [x] Async variants (`createAsync`, `sendAsync`) → poll-able jobs dir.
+- [x] `from-files` / `from-zip` / `from-repo` (local: zip extract into workspace;
       repo: `git clone` — NexOS already owns git infra).
 
 ### Phase 3 — preview + MCP + webhooks

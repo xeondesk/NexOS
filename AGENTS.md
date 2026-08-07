@@ -126,17 +126,23 @@ install the compose file / README port mapping applies as written.
   ambiguity, don't "fix" it. Errors use the v2 `Error` shape `{message}`; known
   but unimplemented operations return `501 {"message":"not_implemented:<op>"}`.
   Auth mirrors the portal: loopback trusted, `NEXOS_API_TOKEN` bearer for remote.
-  This is Phase 1 — streaming is live: `chats.createStream`, `messages.sendStream`
+  State persists to `NEXOS_API_STATE_DIR` (default `state/api/`): `chats/<id>.json`,
+  `files/<id>.json`, `workspace/<chatId>/` (from-zip/repo extraction). This is
+  Phase 2 — streaming + CRUD are live: `chats.createStream`, `messages.sendStream`
   and `chats.resume` emit the raw `ChatStreamEvent`/`MessageStreamEvent` wire
-  format on a deterministic mock backend (`api/lib/{stream-handlers,mock-generator,chat-store}.mjs`),
-  consumed end-to-end by the real `v0` npm SDK in `tests/api-stream-sdk.mjs`
-  (devDependency only). `api/lib/diffpatch.mjs` + `api/lib/v0-stream.mjs` are
-  ports of the SDK's `stream/{diffpatch,result}.ts` — the v0 append fast-path
-  `[[idx,...,suffix],9,9]` only fires for array-item-level string appends
-  (integer-only paths); `parts[i].text` growth travels as plain jsondiffpatch
-  deltas. Everything else (CRUD/persistence, from-files/repo, previews, MCP,
-  webhooks) still returns 501 per the phased plan
-  (`analysis/v0-sdk-analysis.md`).
+  format on a deterministic mock backend; the full chat/message CRUD matrix
+  (create/list/get/update/delete/duplicate, async variants, restore-message,
+  from-files/zip/repo, getFiles/updateFiles) is implemented against the
+  persistent store (`api/lib/{chat-store,chat-handlers,from}.mjs`). Consumers are
+  `tests/api-stream-sdk.mjs` (real `v0` npm SDK, devDependency only) +
+  `tests/api-crud-smoke.sh` (curl-level CRUD + from-* + persistence restart).
+  `api/lib/diffpatch.mjs` + `api/lib/v0-stream.mjs` are ports of the SDK's
+  `stream/{diffpatch,result}.ts` — the v0 append fast-path `[[idx,...,suffix],9,9]`
+  only fires for array-item-level string appends (integer-only paths);
+  `parts[i].text` growth travels as plain jsondiffpatch deltas. Still 501 per the
+  phased plan (`analysis/v0-sdk-analysis.md`): `getPreview`, `mcp-servers`,
+  webhooks, `downloadFiles`, `getConnectStatus`, `deploy`, `createVercelProject`,
+  `messages.resolve*`.
 
 ## Verification flow
 

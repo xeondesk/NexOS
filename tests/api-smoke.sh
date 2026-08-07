@@ -40,18 +40,16 @@ check "GET /health reports auth on" sh -c "echo '$HEALTH' | grep -q '\"auth\":tr
 check "GET /health derives all 41 operations" sh -c "echo '$HEALTH' | grep -q '\"operations\":41'"
 check "GET /health reports /v2 base" sh -c "echo '$HEALTH' | grep -q '\"base\":\"/v2\"'"
 
-# --- routing (operations registered, not yet implemented) ---------------------
-check "POST /v2/chats routes to chats.create (501)" \
-  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"message":"hi"}' "$BASE/v2/chats")" = "501" ]
-check "chats.create 501 carries Error shape" \
-  sh -c "curl -s -X POST -H 'Content-Type: application/json' -d '{\"message\":\"hi\"}' '$BASE/v2/chats' | grep -q '\"message\":\"not_implemented:chats.create\"'"
-check "GET /v2/chats routes to chats.list (501)" \
-  [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v2/chats")" = "501" ]
-check "GET /v2/chats/{id} routes to chats.get (501)" \
-  [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v2/chats/chat_abc")" = "501" ]
-check "deep param route messages.stop matches (501)" \
-  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/v2/chats/chat_abc/messages/msg_1/stop")" = "501" ]
-check "POST /v2/chats/stream now implements chats.createStream (200 SSE)" \
+# --- routing (operations registered; Phase 2 CRUD implemented, rest 501) ----
+check "POST /v2/chats implements chats.create (200 ChatWithUsage)" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"message":"hi"}' "$BASE/v2/chats")" = "200" ]
+check "GET /v2/chats implements chats.list (200)" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v2/chats")" = "200" ]
+check "GET /v2/chats/{id} 404s for an unknown chat" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v2/chats/chat_abc")" = "404" ]
+check "deep param route messages.stop matches (404 for unknown chat)" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/v2/chats/chat_abc/messages/msg_1/stop")" = "404" ]
+check "POST /v2/chats/stream implements chats.createStream (200 SSE)" \
   [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"message":"hi"}' "$BASE/v2/chats/stream")" = "200" ]
 check "POST /v2/chats/stream emits SSE" \
   sh -c "curl -s -X POST -H 'Content-Type: application/json' -d '{\"message\":\"hi\"}' '$BASE/v2/chats/stream' | grep -q 'event: update'"
@@ -97,9 +95,9 @@ if [ -n "$REMOTE_IP" ]; then
   check "remote with wrong token gets 401" \
     [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 -H "Authorization: Bearer nope" "$RBASE/v2/chats" 2>/dev/null)" = "401" ]
   check "remote with valid bearer is served" \
-    [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 -H "Authorization: Bearer $TOKEN" "$RBASE/v2/chats" 2>/dev/null)" = "501" ]
+    [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 -H "Authorization: Bearer $TOKEN" "$RBASE/v2/chats" 2>/dev/null)" = "200" ]
   check "loopback needs no token even when configured" \
-    [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 "http://127.0.0.1:$API_PORT2/v2/chats" 2>/dev/null)" = "501" ]
+    [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 "http://127.0.0.1:$API_PORT2/v2/chats" 2>/dev/null)" = "200" ]
   check "401 carries Error shape" \
     sh -c "curl -s -m 2 '$RBASE/v2/chats' 2>/dev/null | grep -q '\"message\":\"Unauthorized\"'"
 

@@ -134,12 +134,17 @@ contract. Connect the real SDK with `createV0Client({ baseUrl:
 
 This is a phased effort: Phase 0 shipped the routing/auth/validation skeleton
 (known operations dispatch and validate, unimplemented handlers return `501`);
-Phase 1 makes streaming live — `chats.createStream`, `messages.sendStream` and
+Phase 1 made streaming live — `chats.createStream`, `messages.sendStream` and
 `chats.resume` emit the raw `ChatStreamEvent`/`MessageStreamEvent` SSE wire
 format on a deterministic mock backend (title + parts-chunk deltas + usage +
 closing snapshot), verified end-to-end against the real `v0` SDK
-(`tests/api-stream-sdk.mjs`). Chat/message CRUD + persistence, previews, MCP
-servers and webhooks land in later phases (see `analysis/v0-sdk-analysis.md`).
+(`tests/api-stream-sdk.mjs`). Phase 2 added the chat/message CRUD + persistence
+layer: create/list/get/update/delete/duplicate, async variants, restore-message,
+`from-files`/`from-zip`/`from-repo` (zip extraction + `git clone` into a local
+workspace), `getFiles`/`updateFiles` — all persisted under `NEXOS_API_STATE_DIR`
+(default `state/api/`) and exercised by `tests/api-crud-smoke.sh`, including a
+restart-persistence check. Previews, MCP servers and webhooks land in later
+phases (see `analysis/v0-sdk-analysis.md`).
 
 Auth mirrors the portal: loopback always trusted, `NEXOS_API_TOKEN` required as
 `Authorization: Bearer <token>` from non-loopback clients (which is exactly how

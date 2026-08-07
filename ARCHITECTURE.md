@@ -114,15 +114,18 @@ host bootstrap.
    reachability + pubkey, and persisted settings. Supervised as the `web` service,
    started by the entrypoint, covered by `tests/web-smoke.sh` (21 checks) and the
    Docker runtime validation.
-9. v0-compatible API gateway — `api/api-server.mjs` + `api/openapi-v2.json`
-   (contract copied from `vercel/v0-sdk`, Apache-2.0) expose the v0.app
-   production **API v2** surface under `/v2`: the route table is derived from the
-   spec (all 41 operations), with contract validation, `{message}` errors, and
-   `NEXOS_API_TOKEN` bearer/loopback auth. Phase 0 = routing/auth/validation
-   skeleton (unimplemented ops return 501). Phase 1 = streaming: `chats.createStream`,
-   `messages.sendStream`, `chats.resume` emit the raw `ChatStreamEvent`/
-   `MessageStreamEvent` SSE wire format (jsondiffpatch + v0 append deltas) from a
-   deterministic mock backend (`api/lib/{stream-handlers,mock-generator,chat-store}.mjs`),
-   round-trip verified against the real `v0` SDK. Chat/message CRUD + persistence,
-   previews, MCP servers and webhooks land in later phases — plan in
-   `analysis/v0-sdk-analysis.md`.
+ 9. v0-compatible API gateway — `api/api-server.mjs` + `api/openapi-v2.json`
+    (contract copied from `vercel/v0-sdk`, Apache-2.0) expose the v0.app
+    production **API v2** surface under `/v2`: the route table is derived from the
+    spec (all 41 operations), with contract validation, `{message}` errors, and
+    `NEXOS_API_TOKEN` bearer/loopback auth. Phase 0 = routing/auth/validation
+    skeleton (unimplemented ops return 501). Phase 1 = streaming: `chats.createStream`,
+    `messages.sendStream`, `chats.resume` emit the raw `ChatStreamEvent`/
+    `MessageStreamEvent` SSE wire format (jsondiffpatch + v0 append deltas) from a
+    deterministic mock backend (`api/lib/{stream-handlers,mock-generator,chat-store}.mjs`),
+    round-trip verified against the real `v0` SDK. Phase 2 = chat/message CRUD +
+    persistence: create/list/get/update/delete/duplicate, async variants,
+    restore-message, from-files/zip/repo, getFiles/updateFiles against a persistent
+    store (`state/api/`: `chats/`, `files/`, `workspace/`), exercised by
+    `tests/api-crud-smoke.sh` incl. a restart-persistence check. Previews, MCP
+    servers and webhooks land in later phases — plan in `analysis/v0-sdk-analysis.md`.

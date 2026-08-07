@@ -1,15 +1,15 @@
-// NexOS v0-compatible API gateway (Phase 1: streaming wire format).
+// NexOS v0-compatible API gateway (Phase 2: CRUD + persistence).
 //
 // Implements the v0.app production API v2 contract served at
 // https://api.v0.dev/v2. The route table is derived at startup from
 // `api/openapi-v2.json` (a copy of vercel/v0-sdk's openapi.json, Apache-2.0,
 // https://github.com/vercel/v0-sdk) so the mounted surface can never drift
-// from the spec. Phase 1 implements the streaming operations
-// (`chats.createStream`, `messages.sendStream`, `chats.resume`) on a
-// deterministic mock backend, emitting the raw ChatStreamEvent /
-// MessageStreamEvent wire format the SDK client folds via applyStreamEvent.
+// from the spec. Phase 1 added the streaming ops (`chats.createStream`,
+// `messages.sendStream`, `chats.resume`) on a deterministic mock backend.
+// Phase 2 adds chat/message CRUD + async variants + from-files/zip/repo,
+// persisted atomically under NEXOS_API_STATE_DIR (see api/lib/chat-store.mjs).
 // Remaining operations return 501 until the phased plan implements them
-// (chat/message CRUD next, then previews, MCP servers, webhooks).
+// (previews, MCP servers, webhooks next).
 //
 // Base URL: the API is served under `/v2` (matching api.v0.dev/v2). The SDK
 // client connects with `createV0Client({ baseUrl: 'http://127.0.0.1:<port>/v2' })`.
@@ -30,7 +30,9 @@ import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import * as store from './lib/chat-store.mjs'
 import * as streamHandlers from './lib/stream-handlers.mjs'
+import * as chatHandlers from './lib/chat-handlers.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..')
@@ -108,12 +110,21 @@ function matchRoute(method, pathname) {
 
 const REQUIRED_FIELDS = {
   'chats.create': ['message'],
+  'chats.createAsync': ['message'],
   'chats.createStream': ['message'],
   'chats.createFromRepo': ['repo'],
+  'chats.createFromFiles': ['files'],
+  'chats.createFromZip': ['url'],
+  'chats.restoreMessage': ['messageId'],
   'messages.send': ['message'],
+  'messages.sendAsync': ['message'],
   'messages.sendStream': ['message'],
   'mcpServers.create': ['name', 'url'],
   'webhooks.create': ['name', 'events', 'url'],
+}
+
+const REQUIRED_QUERY = {
+  'messages.list': ['limit'],
 }
 
 const NESTED_REQUIRED_FIELDS = {
@@ -143,6 +154,19 @@ function validateRequest(operationId, body) {
         if (value === undefined || value === null || value === '') {
           return `${parent}.${child} is required`
         }
+      }
+    }
+  }
+  return null
+}
+
+function validateQuery(operationId, query) {
+  const required = REQUIRED_QUERY[operationId]
+  if (required) {
+    for (const field of required) {
+      const value = query[field]
+      if (value === undefined || value === null || value === '') {
+        return `${field} is required`
       }
     }
   }
@@ -213,9 +237,30 @@ const STREAM_OPS = {
   'chats.resume': streamHandlers.chatsResume,
 }
 
-function handleOperation({ route, params, body }) {
-  const op = STREAM_OPS[route.operationId]
-  if (op) return op({ params, body })
+const JSON_OPS = {
+  'chats.create': chatHandlers.chatsCreate,
+  'chats.createAsync': chatHandlers.chatsCreateAsync,
+  'chats.list': chatHandlers.chatsList,
+  'chats.get': chatHandlers.chatsGet,
+  'chats.update': chatHandlers.chatsUpdate,
+  'chats.delete': chatHandlers.chatsDelete,
+  'chats.duplicate': chatHandlers.chatsDuplicate,
+  'chats.restoreMessage': chatHandlers.chatsRestoreMessage,
+  'chats.createFromFiles': chatHandlers.chatsCreateFromFiles,
+  'chats.createFromZip': chatHandlers.chatsCreateFromZip,
+  'chats.createFromRepo': chatHandlers.chatsCreateFromRepo,
+  'chats.getFiles': chatHandlers.chatsGetFiles,
+  'chats.updateFiles': chatHandlers.chatsUpdateFiles,
+  'messages.list': chatHandlers.messagesList,
+  'messages.send': chatHandlers.messagesSend,
+  'messages.sendAsync': chatHandlers.messagesSendAsync,
+  'messages.get': chatHandlers.messagesGet,
+  'messages.stop': chatHandlers.messagesStop,
+}
+
+async function handleOperation({ route, params, body, query }) {
+  const op = STREAM_OPS[route.operationId] || JSON_OPS[route.operationId]
+  if (op) return op({ params, body, query })
   return {
     status: 501,
     json: { message: `not_implemented:${route.operationId}` },
@@ -268,12 +313,18 @@ async function handle(req, res) {
     const body = ['POST', 'PUT', 'PATCH'].includes(req.method)
       ? await parseJsonBody(req)
       : {}
+    const query = Object.fromEntries(url.searchParams.entries())
     const problem = validateRequest(match.route.operationId, body)
     if (problem) {
       sendJson(res, 422, { message: problem })
       return
     }
-    const result = handleOperation({ route: match.route, params: match.params, body })
+    const queryProblem = validateQuery(match.route.operationId, query)
+    if (queryProblem) {
+      sendJson(res, 422, { message: queryProblem })
+      return
+    }
+    const result = await handleOperation({ route: match.route, params: match.params, body, query })
     if (typeof result.stream === 'function') {
       await result.stream(res)
       return
@@ -304,8 +355,10 @@ function shutdown() {
 
 server.listen(PORT, HOST, () => {
   fs.mkdirSync(STATE_DIR, { recursive: true })
+  store.initStore({ dir: STATE_DIR })
+  const persisted = store.listChats({ limit: 1000 }).chats.length
   console.log(`[nexos:api] v2 API gateway on ${HOST}:${PORT} (${routes.length} operations from ${path.basename(OPENAPI_FILE)})${TOKEN ? ' (auth enabled)' : ' (no auth)'}`)
-  console.log(`[nexos:api] state dir: ${STATE_DIR}`)
+  console.log(`[nexos:api] state dir: ${STATE_DIR} (${persisted} chats loaded)`)
 })
 
 process.on('SIGTERM', shutdown)
