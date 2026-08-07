@@ -135,6 +135,9 @@ const REQUIRED_FIELDS = {
   'messages.send': ['message'],
   'messages.sendAsync': ['message'],
   'messages.sendStream': ['message'],
+  'messages.resolve': ['task'],
+  'messages.resolveAsync': ['task'],
+  'messages.resolveStream': ['task'],
   'mcpServers.create': ['name', 'url'],
   'webhooks.create': ['name', 'events', 'url'],
 }
@@ -252,6 +255,7 @@ const STREAM_OPS = {
   'chats.createStream': streamHandlers.chatsCreateStream,
   'messages.sendStream': streamHandlers.messagesSendStream,
   'chats.resume': streamHandlers.chatsResume,
+  'messages.resolveStream': streamHandlers.messagesResolveStream,
 }
 
 /**
@@ -298,6 +302,8 @@ const JSON_OPS = {
   'messages.sendAsync': chatHandlers.messagesSendAsync,
   'messages.get': chatHandlers.messagesGet,
   'messages.stop': chatHandlers.messagesStop,
+  'messages.resolve': chatHandlers.messagesResolve,
+  'messages.resolveAsync': chatHandlers.messagesResolveAsync,
   'mcpServers.create': metaHandlers.mcpServersCreate,
   'mcpServers.list': metaHandlers.mcpServersList,
   'mcpServers.get': metaHandlers.mcpServersGet,

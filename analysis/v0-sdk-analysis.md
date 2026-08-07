@@ -165,7 +165,8 @@ Phased development plan. Each phase is independently shippable + testable.
 - [x] Verify with the real SDK: `createV0Client({baseUrl:http://127.0.0.1:PORT/v2})`
   round-trip (`tests/api-stream-sdk.mjs`) + offline fixture tests
   (`tests/api-stream-unit.mjs`).
-- [ ] `messages.resolveStream` + restartable stream persistence (Phase 2 store).
+- [x] `messages.resolveStream` (Phase 2 store) — implemented in Phase 3
+      continuation; see the check below.
 
 ### Phase 2 — chat/message CRUD + persistence ✅ (commit `d60cdfb`)
 - [x] Chats: create/list/get/update/delete/duplicate; Messages:
@@ -198,7 +199,19 @@ Phased development plan. Each phase is independently shippable + testable.
       (`state/api/connectors.json`, seeded by requestId) returning the spec'd
       `pending`/`ready`/`error` oneOf — default `error:
       vercel_connect_not_configured` when unset. Covered in `api-crud-smoke.sh`.
-- [ ] `deploy`, `createVercelProject`, `messages.resolve*` (stream) still 501.
+- [x] `messages.resolve*` family (Phase 3 continuation): `resolve`, `resolveAsync`,
+      `resolveStream` implemented in `api/lib/mock-generator.mjs` (`validateTask`,
+      `mockResolve`, `RESOLVE_TASK_TYPES`) with handlers in `chat-handlers.mjs` /
+      `stream-handlers.mjs`. Task types: `confirmed-steps`, `plan-exit-response`
+      (status `approved|rejected|request-changes`), `answered-questions`,
+      `confirmed-permissions`, `vercel-connect-setup`. Sync → follow-up Message
+      (200); async → `AsyncMessage {messageId}` (202); stream →
+      `MessageStreamEvent` frames (opening snapshot → `message.parts.chunk` deltas
+      → `message.usage` → closing snapshot) + `message.finished` webhook. Covered
+      in `api-crud-smoke.sh` (+7) and `api-stream-smoke.sh` / `api-stream-sdk.mjs`
+      (+6 real-SDK checks, incl. the hey-api `{data,...}` envelope + flat
+      `{chatId, task}` params for the non-stream variant).
+- [ ] `deploy`, `createVercelProject` still 501 (Vercel-locked, deferred).
 
 ### Phase 4 — React/SDK client compatibility
 - [ ] Run `@v0-sdk/react` `V0Transport` against local proxy routes; ship the

@@ -116,6 +116,22 @@ check "messages.stop returns {messageId}" \
 check "chats.restoreMessage returns all messages" \
   sh -c "curl -s -X POST -H 'Content-Type: application/json' -d '{\"messageId\":\"$MSG_ID\"}' '$BASE/chats/$CID/restore-message' | grep -q '\"messages\":'"
 
+# --- messages.resolve family ------------------------------------------------
+check "messages.resolve returns the follow-up assistant Message" \
+  sh -c "curl -s -X POST -H 'Content-Type: application/json' -d '{\"task\":{\"type\":\"confirmed-steps\",\"appliedScripts\":[\"a.sh\"]}}' '$BASE/chats/$CID/messages/resolve' | grep -q '\"finishReason\":\"stop\"'"
+check "messages.resolve echoes task details" \
+  sh -c "curl -s -X POST -H 'Content-Type: application/json' -d '{\"task\":{\"type\":\"confirmed-steps\",\"appliedScripts\":[\"a.sh\"]}}' '$BASE/chats/$CID/messages/resolve' | grep -q 'a.sh'"
+check "messages.resolve approves a plan" \
+  sh -c "curl -s -X POST -H 'Content-Type: application/json' -d '{\"task\":{\"type\":\"plan-exit-response\",\"status\":\"approved\",\"content\":\"\"}}' '$BASE/chats/$CID/messages/resolve' | grep -q 'Plan approved'"
+check "messages.resolveAsync returns 202 {messageId}" \
+  sh -c "curl -s -X POST -H 'Content-Type: application/json' -d '{\"task\":{\"type\":\"answered-questions\",\"answers\":[1]}}' '$BASE/chats/$CID/messages/resolve/async' | grep -q '\"messageId\":\"msg_'"
+check "messages.resolve without task -> 422" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' "$BASE/chats/$CID/messages/resolve")" = "422" ]
+check "messages.resolve rejects an invalid task type -> 422" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"task":{"type":"bogus"}}' "$BASE/chats/$CID/messages/resolve")" = "422" ]
+check "messages.resolve unknown chat -> 404" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"task":{"type":"confirmed-steps"}}' "$BASE/chats/chat_nope/messages/resolve")" = "404" ]
+
 # --- async variants --------------------------------------------------------
 check "chats.createAsync returns 202 {chatId,messageId}" \
   sh -c "curl -s -X POST -H 'Content-Type: application/json' -d '{\"message\":\"async\"}' '$BASE/chats/async' | grep -q '\"chatId\":\"chat_'"

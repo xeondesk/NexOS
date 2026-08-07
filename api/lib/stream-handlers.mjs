@@ -25,7 +25,7 @@ import { Readable } from 'node:stream'
 import { diff } from './diffpatch.mjs'
 import { createV0StreamResult, formatSse } from './v0-stream.mjs'
 import * as store from './chat-store.mjs'
-import { mockResponse, partsProgression } from './mock-generator.mjs'
+import { mockResponse, mockResolve, partsProgression, validateTask } from './mock-generator.mjs'
 import { emitWebhookEvent } from './webhooks.mjs'
 
 const CHUNK_DELAY_MS = 60
@@ -130,6 +130,32 @@ function chatsResumeEvents({ chatId }) {
   return { chat, assistant: last, events }
 }
 
+/**
+ * Builds the raw event list for a resolve-task stream (the assistant's
+ * follow-up turn after the client posts its resolution), or a 404/422 result.
+ */
+function messagesResolveEvents({ chatId, task }) {
+  const chat = store.getChat(chatId)
+  if (!chat) return { notFound: true }
+  const problem = validateTask(task)
+  if (problem) return { invalid: problem }
+  const state = mockResolve(task)
+  const assistant = store.addAssistant(chat.id, { parts: state.parts, content: state.text, usage: store.usageFor(state.text, task.type) })
+  emitWebhookEvent('message.finished', messagePayload(assistant))
+  const steps = partsProgression(state.parts)
+  const usage = store.usageFor(state.text, task.type)
+
+  const events = [{ object: 'message', ...openingMessage(assistant) }]
+  let prev = []
+  for (const step of steps) {
+    events.push({ object: 'message.parts.chunk', id: assistant.id, delta: diff(prev, step) })
+    prev = step
+  }
+  events.push({ object: 'message.usage', id: assistant.id, usage })
+  events.push({ object: 'message', ...messagePayload(assistant) })
+  return { chat, assistant, events }
+}
+
 // ---------------------------------------------------------------------------
 // Raw wire format (public /v2 contract)
 // ---------------------------------------------------------------------------
@@ -172,6 +198,14 @@ export function chatsResume({ params }) {
   const built = chatsResumeEvents({ chatId: params.chatId })
   if (built.notFound) return { status: 404, json: { message: 'chat_not_found' } }
   if (built.empty) return { status: 204, json: null }
+  return { stream: (res) => writeRawStream(res, built.events) }
+}
+
+/** Streams the assistant's resolve-task follow-up as a raw SSE stream. */
+export function messagesResolveStream({ params, body }) {
+  const built = messagesResolveEvents({ chatId: params.chatId, task: body.task })
+  if (built.notFound) return { status: 404, json: { message: 'chat_not_found' } }
+  if (built.invalid) return { status: 422, json: { message: built.invalid } }
   return { stream: (res) => writeRawStream(res, built.events) }
 }
 

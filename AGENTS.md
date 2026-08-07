@@ -169,9 +169,21 @@ install the compose file / README port mapping applies as written.
   `api/lib/diffpatch.mjs` + `api/lib/v0-stream.mjs` are ports of the SDK's
   `stream/{diffpatch,result}.ts` — the v0 append fast-path `[[idx,...,suffix],9,9]`
   only fires for array-item-level string appends (integer-only paths);
-  `parts[i].text` growth travels as plain jsondiffpatch deltas. Still 501 per the
-  phased plan (`analysis/v0-sdk-analysis.md`): `getConnectStatus`,
-  `downloadFiles`, `deploy`, `createVercelProject`, `messages.resolve*`.
+  `parts[i].text` growth travels as plain jsondiffpatch deltas. The
+  `messages.resolve` family (sync, async, stream) is implemented in
+  `api/lib/mock-generator.mjs` (`validateTask`, `mockResolve`,
+  `RESOLVE_TASK_TYPES`) with handlers in `chat-handlers.mjs` /
+  `stream-handlers.mjs` — task types `confirmed-steps`,
+  `plan-exit-response` (status `approved|rejected|request-changes`),
+  `answered-questions`, `confirmed-permissions`, `vercel-connect-setup`;
+  sync returns the follow-up Message (200), async returns
+  `AsyncMessage {messageId}` (202), stream emits `MessageStreamEvent`
+  frames (opening snapshot → `message.parts.chunk` deltas → `message.usage`
+  → closing snapshot) and fires the `message.finished` webhook. The real SDK
+  `client.messages.resolve` returns hey-api `{data,error,request,response}`
+  and takes a flat `{chatId, task, modelConfiguration}` params object (NOT
+  positional args). Still 501 per the phased plan
+  (`analysis/v0-sdk-analysis.md`): `deploy`, `createVercelProject`.
 
 ## Verification flow
 

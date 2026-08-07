@@ -35,6 +35,73 @@ export function mockResponse(prompt) {
   return { title: titleFromPrompt(prompt), parts, text }
 }
 
+const RESOLVE_TASK_TYPES = [
+  'confirmed-steps',
+  'plan-exit-response',
+  'answered-questions',
+  'confirmed-permissions',
+  'vercel-connect-setup',
+]
+
+/**
+ * Validates a resolve `task` against the v2 contract's oneOf shapes.
+ * Returns an error message or null when valid.
+ */
+export function validateTask(task) {
+  if (!task || typeof task !== 'object' || Array.isArray(task)) return 'task is required'
+  const type = task.type
+  if (!RESOLVE_TASK_TYPES.includes(type)) return 'invalid task type'
+  if (type === 'plan-exit-response') {
+    if (!['approved', 'rejected', 'request-changes'].includes(task.status)) return 'task.status is required'
+    if (typeof task.content !== 'string') return 'task.content is required'
+  }
+  if (type === 'answered-questions' && !Array.isArray(task.answers)) return 'task.answers is required'
+  if (type === 'confirmed-permissions' && !Array.isArray(task.permissions)) return 'task.permissions is required'
+  return null
+}
+
+/**
+ * Deterministic assistant turn for a resolved task (the message the mock
+ * model emits after the client posts its resolution).
+ */
+export function mockResolve(task) {
+  const ts = new Date().toISOString()
+  let text
+  switch (task.type) {
+    case 'confirmed-steps': {
+      const bits = []
+      if ((task.connectedIntegrationNames || []).length) bits.push(`Connected: ${task.connectedIntegrationNames.join(', ')}`)
+      if ((task.connectedMcpPresetNames || []).length) bits.push(`MCP presets: ${task.connectedMcpPresetNames.join(', ')}`)
+      if ((task.appliedScripts || []).length) bits.push(`Applied scripts: ${task.appliedScripts.join(', ')}`)
+      if ((task.addedEnvVars || []).length) bits.push(`Added env vars: ${task.addedEnvVars.join(', ')}`)
+      text = 'Steps confirmed — continuing with the plan.' + (bits.length ? '\n\n' + bits.join('\n') : '')
+      break
+    }
+    case 'plan-exit-response':
+      text =
+        task.status === 'approved'
+          ? 'Plan approved — proceeding to implementation.'
+          : task.status === 'rejected'
+            ? 'Plan rejected — stopping here.'
+            : `Plan changes requested: ${task.content || ''}`
+      break
+    case 'answered-questions':
+      text = `Thanks — ${task.answers.length} answer${task.answers.length === 1 ? '' : 's'} received. Proceeding.`
+      break
+    case 'confirmed-permissions':
+      text = `Permissions confirmed (${task.permissions.length}).${task.userMessage ? ` ${task.userMessage}` : ''}`
+      break
+    case 'vercel-connect-setup':
+      text = 'Vercel Connect setup complete — resuming.'
+      break
+  }
+  const parts = [
+    { type: 'thinking', text: `The user resolved the "${task.type}" task.`, startedAt: ts, finishedAt: ts },
+    { type: 'text', text, startedAt: ts, finishedAt: ts },
+  ]
+  return { text, parts }
+}
+
 function splitText(text, count) {
   const width = Math.max(1, Math.ceil(text.length / count))
   const chunks = []

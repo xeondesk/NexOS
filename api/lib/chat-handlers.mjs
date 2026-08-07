@@ -6,7 +6,7 @@
 // `{ status, json }` for the router to serialize.
 
 import * as store from './chat-store.mjs'
-import { mockResponse } from './mock-generator.mjs'
+import { mockResponse, mockResolve, validateTask } from './mock-generator.mjs'
 import { extractZip, extractRepo, toFilesRecord } from './from.mjs'
 import { openCollection } from './meta-store.mjs'
 import { buildZip } from './zip.mjs'
@@ -264,6 +264,34 @@ export function messagesStop({ params }) {
     return { status: 404, json: { message: 'message_not_found' } }
   }
   return { status: 200, json: { messageId: params.messageId } }
+}
+
+export function messagesResolve({ params, body }) {
+  const chat = store.getChat(params.chatId)
+  if (!chat) return { status: 404, json: { message: 'chat_not_found' } }
+  const problem = validateTask(body.task)
+  if (problem) return { status: 422, json: { message: problem } }
+  const state = mockResolve(body.task)
+  const assistant = store.addAssistant(chat.id, {
+    parts: state.parts,
+    content: state.text,
+    usage: store.usageFor(state.text, body.task.type),
+  })
+  return { status: 200, json: assistant }
+}
+
+export function messagesResolveAsync({ params, body }) {
+  const chat = store.getChat(params.chatId)
+  if (!chat) return { status: 404, json: { message: 'chat_not_found' } }
+  const problem = validateTask(body.task)
+  if (problem) return { status: 422, json: { message: problem } }
+  const state = mockResolve(body.task)
+  const assistant = store.addAssistant(chat.id, {
+    parts: state.parts,
+    content: state.text,
+    usage: store.usageFor(state.text, body.task.type),
+  })
+  return { status: 202, json: { messageId: assistant.id } }
 }
 
 // ---------------------------------------------------------------------------

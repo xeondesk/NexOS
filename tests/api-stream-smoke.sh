@@ -111,8 +111,24 @@ check "sendStream without message -> 422" \
   [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" -d '{}' "$BASE/v2/chats/$CHAT_ID/messages/stream")" = "422" ]
 check "chats.create implemented in Phase 2 (200)" \
   [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" -d '{"message":"hi"}' "$BASE/v2/chats")" = "200" ]
-check "resolveStream still 501" \
-  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" -d '{"message":"hi"}' "$BASE/v2/chats/$CHAT_ID/messages/resolve/stream")" = "501" ]
+RESOLVE_STREAM=$(
+  curl -s -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
+    -d '{"task":{"type":"confirmed-steps","appliedScripts":["a.sh"]}}' \
+    "$BASE/v2/chats/$CHAT_ID/messages/resolve/stream"
+)
+echo "$RESOLVE_STREAM" >"$TMP/resolve-stream.txt"
+check "resolveStream opens with a message snapshot" \
+  grep -q '"object":"message","id":"msg_' "$TMP/resolve-stream.txt"
+check "resolveStream streams parts.chunk deltas" \
+  grep -q '"object":"message.parts.chunk"' "$TMP/resolve-stream.txt"
+check "resolveStream closes with the follow-up message" \
+  grep -q '"finishReason":"stop"' "$TMP/resolve-stream.txt"
+check "resolveStream echoes the resolved task" \
+  grep -q 'a.sh' "$TMP/resolve-stream.txt"
+check "resolveStream without task -> 422" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" -d '{}' "$BASE/v2/chats/$CHAT_ID/messages/resolve/stream")" = "422" ]
+check "resolveStream unknown chat -> 404" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" -d '{"task":{"type":"confirmed-steps"}}' "$BASE/v2/chats/chat_nope/messages/resolve/stream")" = "404" ]
 
 if [ "$FAIL" -eq 0 ]; then
   echo "api-stream-smoke: PASS"

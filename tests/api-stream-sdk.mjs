@@ -16,15 +16,20 @@ const baseUrl = process.env.NEXOS_STREAM_BASE || 'http://127.0.0.1:9986/v2'
 const token = process.env.NEXOS_STREAM_TOKEN || ''
 
 let checks = 0
+const pending = []
 function check(name, fn) {
   checks++
-  try {
-    fn()
-    console.log(`ok: ${name}`)
-  } catch (err) {
-    console.error(`FAIL: ${name}\n  ${err.message}`)
-    process.exitCode = 1
-  }
+  pending.push(
+    (async () => {
+      try {
+        await fn()
+        console.log(`ok: ${name}`)
+      } catch (err) {
+        console.error(`FAIL: ${name}\n  ${err.message}`)
+        process.exitCode = 1
+      }
+    })(),
+  )
 }
 
 const client = createV0Client({ baseUrl, auth: token || undefined })
@@ -105,5 +110,49 @@ check('resume replays the last assistant generation deterministically', async ()
   assert.deepEqual(resumedFinal.parts, sentFinal.parts, 'resumed stream accumulates to same parts')
 })
 
+check('resolveStream yields the follow-up assistant message', async () => {
+  const created = await client.chats.createStream({ message: 'resolve me' })
+  const { final: createdFinal } = await collect(created)
+  const chatId = createdFinal.chat.id
+
+  const result = await client.messages.resolveStream({
+    chatId,
+    task: { type: 'plan-exit-response', status: 'approved', content: '' },
+  })
+  const { updates, final } = await collect(result)
+
+  assert.equal(final.status, 'done')
+  assert.equal(final.message.role, 'assistant')
+  assert.equal(final.message.chatId, chatId)
+  assert.match(final.message.id, /^msg_/)
+  assert.equal(final.message.finishReason, 'stop')
+  assert.equal(final.message.restorable, true)
+
+  const text = final.parts
+    .filter((p) => p.type === 'text')
+    .map((p) => p.text)
+    .join('')
+  assert.match(text, /approved/i, 'resolution acknowledged in assistant text')
+  assert.ok(updates.some((u) => u.message && u.message.parts.length === 0), 'opening snapshot streamed')
+})
+
+check('resolve returns the follow-up Message as JSON', async () => {
+  const created = await client.chats.createStream({ message: 'seed' })
+  const { final: createdFinal } = await collect(created)
+  const chatId = createdFinal.chat.id
+
+  const resolved = await client.messages.resolve({
+    chatId,
+    task: { type: 'confirmed-steps', appliedScripts: ['a.sh'] },
+  })
+
+  assert.equal(resolved.data.role, 'assistant')
+  assert.match(resolved.data.id, /^msg_/)
+  assert.equal(resolved.data.finishReason, 'stop')
+  assert.ok(JSON.stringify(resolved.data).includes('a.sh'), 'task details echoed in the message')
+})
+
 const failures = process.exitCode || 0
-console.log(failures ? `api-stream-sdk: FAIL (${checks} checks)` : `api-stream-sdk: PASS (${checks} checks)`)
+await Promise.all(pending)
+const finalFailures = process.exitCode || failures
+console.log(finalFailures ? `api-stream-sdk: FAIL (${checks} checks)` : `api-stream-sdk: PASS (${checks} checks)`)
