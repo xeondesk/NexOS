@@ -260,7 +260,11 @@ NexOS ships three git helpers under `git/`; wire them per your provider:
   Add the public key line from `state/sign/sign-key.pub` (prefixed with a
   principal) to `git/allowed-signers`. Signatures are namespace-bound and
   SHA-512; set a `NEXOS_GIT_SIGN_TOKEN` to gate remote clients with a bearer
-  token.
+  token. The service enforces the hosted v0 wire contract: only the
+  `NEXOS_GIT_SIGN_ALLOWED_NAMESPACES` whitelist (default `git`; `*` to disable)
+  is accepted, empty payloads are rejected (`400 Signing payload is empty`),
+  and `NEXOS_GIT_SIGN_REQUIRE_CONTENT_TYPE=true` + a
+  `NEXOS_GIT_SIGN_DEFAULT_NAMESPACE` tighten it to the exact hosted behavior.
 - **Generic (HTTPS basic auth)** — set `NEXOS_GIT_USERNAME` / `NEXOS_GIT_PASSWORD`
   and install the helper:
   ```

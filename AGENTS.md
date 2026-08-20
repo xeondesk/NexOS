@@ -113,6 +113,13 @@ install the compose file / README port mapping applies as written.
   Token gate: non-loopback requests need `Authorization: Bearer $NEXOS_GIT_SIGN_TOKEN`;
   loopback always trusted. `NEXOS_GIT_SIGN_ALLOW_REMOTE`/`NEXOS_ALLOW_REMOTE=true`
   binds 0.0.0.0. The entrypoint skips git-sign unless a key is configured.
+  Wire-contract guards (hosted v0 parity): `NEXOS_GIT_SIGN_ALLOWED_NAMESPACES`
+  whitelist (default `git`, `*` disables; 400 `Invalid signing namespace`),
+  `NEXOS_GIT_SIGN_REQUIRE_CONTENT_TYPE=true` enforces the exact
+  `application/vnd.git.ssh-signature-request` type (415 otherwise, default
+  off), empty payloads are always 400 `Signing payload is empty`, and
+  `NEXOS_GIT_SIGN_DEFAULT_NAMESPACE` (default empty = missing header 400)
+  defaults the namespace when the header is absent.
 - **Web portal**: `web/api-server.js` is a plain `node:http` server (no deps, no
   build step) supervised as the `web` service (`NEXOS_WEB_PORT`, 8080;
   `NEXOS_WEB_HOST` defaults to 127.0.0.1, `0.0.0.0` when `NEXOS_ALLOW_REMOTE=true`).

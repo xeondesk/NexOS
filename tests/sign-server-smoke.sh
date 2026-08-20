@@ -70,6 +70,18 @@ check "missing namespace rejected" \
 check "unknown route 404" \
   [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 "http://127.0.0.1:$PORT/nope")" = "404" ]
 
+# --- wire-contract guards (fixes A-D; hosted v0 parity, lenient by default) ---
+check "non-whitelisted namespace rejected (400)" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 -X POST -H 'x-v0-git-signing-namespace: git:commit' --data-binary 'x' "http://127.0.0.1:$PORT/sign")" = "400" ]
+check "non-whitelisted namespace returns the hosted error shape" \
+  sh -c "curl -s -m 2 -X POST -H 'x-v0-git-signing-namespace: git:commit' --data-binary 'x' 'http://127.0.0.1:$PORT/sign' | grep -q 'Invalid signing namespace'"
+check "empty payload rejected (400)" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 -X POST -H 'x-v0-git-signing-namespace: git' "http://127.0.0.1:$PORT/sign")" = "400" ]
+check "empty payload returns the hosted error shape" \
+  sh -c "curl -s -m 2 -X POST -H 'x-v0-git-signing-namespace: git' 'http://127.0.0.1:$PORT/sign' | grep -q 'Signing payload is empty'"
+check "content-type not enforced by default (octet-stream still signs)" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 -X POST -H 'content-type: application/octet-stream' -H 'x-v0-git-signing-namespace: git' --data-binary 'x' "http://127.0.0.1:$PORT/sign")" = "200" ]
+
 # --- sign + verify ---
 printf 'nexos sign test payload\nline two\n' >"$TMP/data.txt"
 curl -s -m 5 -X POST -H "x-v0-git-signing-namespace: $NAMESPACE" \
@@ -111,6 +123,51 @@ if ssh-keygen -Y verify -f "$TMP/selftest-allowed-signers" -I "$IDENTITY" -n "$N
 else
   echo "note: ssh-keygen -Y verify is broken on this host (OpenSSH 8.7p1 + OpenSSL 3.5.5) — it rejects even its own signatures; tool-backed interop checks skipped (reference verifier covers them)"
 fi
+
+# --- tightened wire-contract mode (hosted v0 exact behavior) ----------------
+PORT_T=$((PORT + 2))
+NEXOS_GIT_SIGN_PORT="$PORT_T" NEXOS_GIT_SIGN_KEY="$TMP/sign-key.pem" \
+  NEXOS_GIT_SIGN_REQUIRE_CONTENT_TYPE=true NEXOS_GIT_SIGN_DEFAULT_NAMESPACE=git \
+  NEXOS_GIT_SIGN_ALLOWED_NAMESPACES=git \
+  node "$NEXOS_ROOT/git/sign-server.js" >"$TMP/server-tight.log" 2>&1 &
+SERVER_T=$!
+sleep 1
+TBASE="http://127.0.0.1:$PORT_T"
+
+check "content-type required -> missing content-type 415" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 -X POST -H 'x-v0-git-signing-namespace: git' --data-binary 'x' "$TBASE/sign")" = "415" ]
+check "content-type required -> wrong content-type 415" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 -X POST -H 'content-type: application/octet-stream' -H 'x-v0-git-signing-namespace: git' --data-binary 'x' "$TBASE/sign")" = "415" ]
+check "content-type required -> returns the hosted error shape" \
+  sh -c "curl -s -m 2 -X POST -H 'x-v0-git-signing-namespace: git' --data-binary 'x' '$TBASE/sign' | grep -q 'Unsupported content type'"
+check "content-type required -> exact request type signs" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 -X POST -H 'content-type: application/vnd.git.ssh-signature-request' -H 'x-v0-git-signing-namespace: git' --data-binary 'x' "$TBASE/sign")" = "200" ]
+curl -s -m 2 -X POST -H 'content-type: application/vnd.git.ssh-signature-request' \
+  -H 'x-v0-git-signing-namespace: git' --data-binary 'x' "$TBASE/sign" -o "$TMP/tight.sig"
+printf 'x' >"$TMP/x.txt"
+check "content-type required signature verifies" \
+  VERIFY_REF "$TMP/tight.sig" "$TMP/x.txt"
+curl -s -m 2 -X POST -H 'content-type: application/vnd.git.ssh-signature-request' \
+  --data-binary 'x' "$TBASE/sign" -o "$TMP/tight-default.sig"
+check "default namespace (git) signs when header absent" \
+  [ "$(head -1 "$TMP/tight-default.sig")" = "-----BEGIN SSH SIGNATURE-----" ]
+check "default-namespace signature verifies as git" \
+  VERIFY_REF "$TMP/tight-default.sig" "$TMP/x.txt"
+
+kill "$SERVER_T" 2>/dev/null
+wait "$SERVER_T" 2>/dev/null
+
+# --- "*" disables the namespace whitelist ------------------------------------
+PORT_W=$((PORT + 3))
+NEXOS_GIT_SIGN_PORT="$PORT_W" NEXOS_GIT_SIGN_KEY="$TMP/sign-key.pem" \
+  NEXOS_GIT_SIGN_ALLOWED_NAMESPACES='*' \
+  node "$NEXOS_ROOT/git/sign-server.js" >"$TMP/server-wild.log" 2>&1 &
+SERVER_W=$!
+sleep 1
+check "NEXOS_GIT_SIGN_ALLOWED_NAMESPACES=* accepts any namespace" \
+  [ "$(curl -s -o /dev/null -w '%{http_code}' -m 2 -X POST -H 'x-v0-git-signing-namespace: custom-ns' --data-binary 'x' "http://127.0.0.1:$PORT_W/sign")" = "200" ]
+kill "$SERVER_W" 2>/dev/null
+wait "$SERVER_W" 2>/dev/null
 
 kill "$SERVER" 2>/dev/null
 wait "$SERVER" 2>/dev/null

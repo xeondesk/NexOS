@@ -39,6 +39,18 @@
 //   NEXOS_GIT_SIGN_NAMESPACE_HEADER  header carrying the signature namespace
 //                                 (default x-v0-git-signing-namespace, the
 //                                 header git/ssh-sign.sh already sends)
+//   NEXOS_GIT_SIGN_ALLOWED_NAMESPACES  comma-separated namespace whitelist
+//                                 (default "git", matching the hosted v0
+//                                 endpoint; "*" disables the whitelist).
+//                                 400 on mismatch.
+//   NEXOS_GIT_SIGN_REQUIRE_CONTENT_TYPE  when "true", require the hosted
+//                                 endpoint's exact request content type
+//                                 (application/vnd.git.ssh-signature-request);
+//                                 anything else (or missing) -> 415. Default
+//                                 false (client behavior preserved).
+//   NEXOS_GIT_SIGN_DEFAULT_NAMESPACE  namespace used when the namespace header
+//                                 is absent (hosted v0 defaults to "git";
+//                                 NexOS default empty = missing header -> 400).
 //
 // Endpoints:
 //   GET /health    -> { ok: true }
@@ -61,9 +73,18 @@ const token = process.env.NEXOS_GIT_SIGN_TOKEN || ''
 const namespaceHeader =
   process.env.NEXOS_GIT_SIGN_NAMESPACE_HEADER || 'x-v0-git-signing-namespace'
 const hashalg = process.env.NEXOS_GIT_SIGN_HASHALG || 'sha512'
+const allowedNamespaces = (process.env.NEXOS_GIT_SIGN_ALLOWED_NAMESPACES || 'git')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+const namespaceWhitelistDisabled = allowedNamespaces.includes('*')
+const requireContentType =
+  (process.env.NEXOS_GIT_SIGN_REQUIRE_CONTENT_TYPE || '') === 'true'
+const defaultNamespace = (process.env.NEXOS_GIT_SIGN_DEFAULT_NAMESPACE || '').trim()
 const MAX_BODY_BYTES = 1024 * 1024
 const SIGNATURE_TYPE = 'ssh-ed25519'
 const HASHALG_ALLOWED = ['sha256', 'sha512']
+const SIGN_REQUEST_CONTENT_TYPE = 'application/vnd.git.ssh-signature-request'
 
 if (!HASHALG_ALLOWED.includes(hashalg)) {
   console.error(`[nexos:git-sign] unsupported hash algorithm "${hashalg}" (allowed: ${HASHALG_ALLOWED.join(', ')})`)
@@ -170,10 +191,26 @@ function sendJson(res, statusCode, data) {
   res.end(JSON.stringify(data))
 }
 
+function contentTypeOf(value) {
+  return String(value || '').split(';')[0].trim().toLowerCase()
+}
+
 function handleSign(req, res) {
-  const namespace = (req.headers[namespaceHeader.toLowerCase()] || '').trim()
+  // D: default namespace when the header is absent.
+  let namespace = (req.headers[namespaceHeader.toLowerCase()] || '').trim()
+  if (!namespace) namespace = defaultNamespace
   if (!namespace) {
     sendJson(res, 400, { error: `missing namespace header: ${namespaceHeader}` })
+    return
+  }
+  // A: namespace whitelist (hosted v0 parity; "*" disables it).
+  if (!namespaceWhitelistDisabled && !allowedNamespaces.includes(namespace)) {
+    sendJson(res, 400, { error: 'Invalid signing namespace' })
+    return
+  }
+  // B: request content-type enforcement (hosted v0 parity, opt-in).
+  if (requireContentType && contentTypeOf(req.headers['content-type']) !== SIGN_REQUEST_CONTENT_TYPE) {
+    sendJson(res, 415, { error: 'Unsupported content type' })
     return
   }
 
@@ -196,14 +233,20 @@ function handleSign(req, res) {
   req.on('end', () => {
     if (aborted || res.headersSent) return
     try {
-      const signature = signData(Buffer.concat(chunks), namespace)
+      // C: an empty payload is rejected (hosted v0 parity).
+      const payload = Buffer.concat(chunks)
+      if (payload.length === 0) {
+        sendJson(res, 400, { error: 'Signing payload is empty' })
+        return
+      }
+      const signature = signData(payload, namespace)
       res.writeHead(200, {
         'Content-Type': 'application/vnd.git.ssh-signature',
         'X-Nexos-Git-Sign-Key': pubKeyLine,
       })
       res.end(signature)
       console.log(
-        `[nexos:git-sign] signed ${size} byte(s) for namespace "${namespace}" (${hashalg})`,
+        `[nexos:git-sign] signed ${payload.length} byte(s) for namespace "${namespace}" (${hashalg})`,
       )
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

@@ -135,8 +135,18 @@ byte-for-byte identical to `ssh-keygen -Y sign` for the same key/data/namespace.
 
 ## 8. Next steps
 
-1. Implement A–D in `git/sign-server.js` behind `NEXOS_*` env defaults that
-   preserve current behavior unless tightened.
-2. Extend `tests/sign-server-smoke.sh` with the new guards (namespace whitelist,
-   content-type 415, empty-payload 400, default-namespace).
+1. **Done.** Implemented A–D in `git/sign-server.js` behind `NEXOS_*` env
+   defaults that preserve current behavior unless tightened:
+   - A `NEXOS_GIT_SIGN_ALLOWED_NAMESPACES` (default `git`; `*` disables) — 400
+     `{"error":"Invalid signing namespace"}` on mismatch.
+   - B `NEXOS_GIT_SIGN_REQUIRE_CONTENT_TYPE=true` requires exactly
+     `application/vnd.git.ssh-signature-request` — 415
+     `{"error":"Unsupported content type"}` otherwise (default `false`).
+   - C empty payloads rejected — 400 `{"error":"Signing payload is empty"}`
+     (always on).
+   - D `NEXOS_GIT_SIGN_DEFAULT_NAMESPACE` (default empty → missing header stays
+     400; set `git` for hosted parity).
+2. **Done.** `tests/sign-server-smoke.sh` extended with the new guards
+   (namespace whitelist + wildcard-disable, content-type 415, empty-payload 400,
+   default-namespace) and a real signature verifies for the tightened mode.
 3. Re-run `npm test`, rebuild/validate the Docker image, commit + push.
