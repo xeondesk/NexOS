@@ -146,10 +146,10 @@ function chatRecord({ title = '', privacy = DEFAULT_PRIVACY, metadata = {} } = {
   }
 }
 
-function messageRecord(chatId, { role, content = '', parts = [], usage = zeroUsage(), finishReason = null } = {}) {
+function messageRecord(chatId, { id, role, content = '', parts = [], usage = zeroUsage(), finishReason = null } = {}) {
   const ts = nowIso()
   return {
-    id: newId('msg_'),
+    id: id || newId('msg_'),
     chatId,
     role,
     createdAt: ts,
@@ -179,10 +179,10 @@ export function createChat({ message, title = '', privacy, metadata } = {}) {
 }
 
 /** Appends a message to an existing chat (the chat's updatedAt bumps). */
-export function addMessage(chatId, { role, content = '', parts = [], usage, finishReason } = {}) {
+export function addMessage(chatId, { id, role, content = '', parts = [], usage, finishReason } = {}) {
   const chat = chats.get(chatId)
   if (!chat) return null
-  const message = messageRecord(chatId, { role, content, parts, usage, finishReason })
+  const message = messageRecord(chatId, { id, role, content, parts, usage, finishReason })
   pushMessage(chatId, message)
   chat.updatedAt = nowIso()
   persist(chatId)
@@ -190,8 +190,8 @@ export function addMessage(chatId, { role, content = '', parts = [], usage, fini
 }
 
 /** Adds an assistant message carrying the final parts + usage. */
-export function addAssistant(chatId, { parts = [], content = '', usage = zeroUsage() } = {}) {
-  return addMessage(chatId, { role: 'assistant', content, parts, usage, finishReason: 'stop' })
+export function addAssistant(chatId, { id, parts = [], content = '', usage = zeroUsage() } = {}) {
+  return addMessage(chatId, { id, role: 'assistant', content, parts, usage, finishReason: 'stop' })
 }
 
 function pushMessage(chatId, message) {
@@ -211,6 +211,35 @@ export function updateChat(chatId, { title, privacy, metadata } = {}) {
   chat.updatedAt = nowIso()
   persist(chatId)
   return chat
+}
+
+/**
+ * Overwrites an assistant message's generated fields after its text finished
+ * streaming (the live model backend adds the message empty up front, then
+ * finalizes it with the accumulated parts once the stream completes).
+ */
+export function finalizeMessage(chatId, messageId, { parts, content, usage, finishReason } = {}) {
+  const message = messagesById.get(messageId)
+  if (!message || message.chatId !== chatId) return null
+  if (parts !== undefined) message.parts = parts
+  if (content !== undefined) message.content = content
+  if (usage !== undefined) message.usage = usage
+  if (finishReason !== undefined) message.finishReason = finishReason
+  message.updatedAt = nowIso()
+  persist(chatId)
+  return message
+}
+
+/** Removes a message (used to roll back an assistant that never produced text). */
+export function deleteMessage(chatId, messageId) {
+  const message = messagesById.get(messageId)
+  if (!message || message.chatId !== chatId) return false
+  messagesById.delete(messageId)
+  const list = messagesByChat.get(chatId) || []
+  const index = list.indexOf(message)
+  if (index !== -1) list.splice(index, 1)
+  persist(chatId)
+  return true
 }
 
 /** Links a local Vercel-equivalent project to a chat (persisted). */

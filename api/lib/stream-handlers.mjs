@@ -25,7 +25,8 @@ import { Readable } from 'node:stream'
 import { diff } from './diffpatch.mjs'
 import { createV0StreamResult, formatSse } from './v0-stream.mjs'
 import * as store from './chat-store.mjs'
-import { mockResponse, mockResolve, partsProgression, validateTask } from './mock-generator.mjs'
+import { isModelEnabled, streamModelDeltas } from './model-client.mjs'
+import { mockResponse, mockResolve, partsProgression, titleFromPrompt, validateTask } from './mock-generator.mjs'
 import { emitWebhookEvent } from './webhooks.mjs'
 
 const CHUNK_DELAY_MS = 60
@@ -157,6 +158,132 @@ function messagesResolveEvents({ chatId, task }) {
 }
 
 // ---------------------------------------------------------------------------
+// Live model backend (NEXOS_API_MODEL_URL set) — same wire events as the mock
+// builders, but the parts are streamed token-by-token from an OpenAI-compatible
+// `/chat/completions` endpoint. The assistant message is added empty up front
+// and finalized with the accumulated parts once the stream completes.
+// ---------------------------------------------------------------------------
+
+/**
+ * Async parts *progression* for a live model turn: successive snapshots grow by
+ * single token appends, so `message.parts.chunk` deltas exercise the v0 append
+ * fast-path exactly like the mock progression. The final yielded snapshot is
+ * the accumulated parts (used verbatim for persistence).
+ */
+async function* modelPartsSteps({ prompt, history }) {
+  const startedAt = new Date().toISOString()
+  const parts = []
+  let thinking = null
+  let text = null
+  let thinkingIndex = -1
+  let textIndex = -1
+
+  const snapshot = () => parts.map((p) => ({ ...p }))
+
+  for await (const delta of streamModelDeltas({ prompt, history })) {
+    if (delta.type === 'thinking') {
+      if (!thinking) {
+        thinking = { type: 'thinking', text: '', startedAt, finishedAt: startedAt }
+        parts.push({ ...thinking })
+        thinkingIndex = parts.length - 1
+        yield snapshot()
+      }
+      thinking.text += delta.text
+      parts[thinkingIndex] = { ...thinking }
+      yield snapshot()
+    } else {
+      if (!text) {
+        text = { type: 'text', text: '', startedAt, finishedAt: startedAt }
+        parts.push({ ...text })
+        textIndex = parts.length - 1
+        yield snapshot()
+      }
+      text.text += delta.text
+      parts[textIndex] = { ...text }
+      yield snapshot()
+    }
+  }
+
+  if (!text) {
+    text = { type: 'text', text: '', startedAt, finishedAt: startedAt }
+    parts.push({ ...text })
+    yield snapshot()
+  }
+}
+
+/** Persisted context for the model-backed create-stream path. */
+function modelCreateSetup({ message, title, privacy, metadata }) {
+  const { chat } = store.createChat({ message, title: title || titleFromPrompt(message), privacy, metadata })
+  emitWebhookEvent('chat.created', store.toChatApi(chat))
+  const assistant = store.addAssistant(chat.id, { id: store.newId('msg_'), parts: [], content: '', usage: store.zeroUsage() })
+  return { chat, assistant, opening: false, closing: 'chat', history: [], webhook: null }
+}
+
+/** Persisted context for the model-backed send-stream path (or notFound). */
+function modelSendSetup({ chatId, message }) {
+  const chat = store.getChat(chatId)
+  if (!chat) return { notFound: true }
+  store.addMessage(chat.id, { role: 'user', content: message })
+  const history = store
+    .getMessages(chat.id)
+    .slice(0, -1)
+    .map((m) => ({ role: m.role, content: m.content }))
+    .filter((m) => m.content)
+  const assistant = store.addAssistant(chat.id, { id: store.newId('msg_'), parts: [], content: '', usage: store.zeroUsage() })
+  return { chat, assistant, opening: true, closing: 'message', history, webhook: 'message.finished' }
+}
+
+/**
+ * Streams the model-backed raw events for a create/send turn. Emits the chat /
+ * opening-message event, then a `message.parts.chunk` per token delta, then
+ * `message.usage` and the closing snapshot. Finalizes (or rolls back) the
+ * persisted assistant message as the stream succeeds or fails.
+ */
+async function* modelStreamEvents({ assistant, chat, opening, closing, history, webhook, prompt }) {
+  if (chat) {
+    yield chatEvent(chat)
+    yield { object: 'chat.title', id: chat.id, delta: chat.title }
+  }
+  if (opening) {
+    yield { object: 'message', ...openingMessage(assistant) }
+  }
+
+  let prev = []
+  try {
+    for await (const step of modelPartsSteps({ prompt, history })) {
+      yield { object: 'message.parts.chunk', id: assistant.id, delta: diff(prev, step) }
+      prev = step
+    }
+  } catch (err) {
+    const text = prev.find((p) => p.type === 'text')?.text || ''
+    if (text) {
+      store.finalizeMessage(assistant.chatId, assistant.id, {
+        parts: prev,
+        content: text,
+        usage: store.usageFor(text, prompt),
+        finishReason: 'error',
+      })
+    } else {
+      store.deleteMessage(assistant.chatId, assistant.id)
+    }
+    throw err
+  }
+
+  const text = prev.find((p) => p.type === 'text')?.text || ''
+  const usage = store.usageFor(text, prompt)
+  const final = store.finalizeMessage(assistant.chatId, assistant.id, {
+    parts: prev,
+    content: text,
+    usage,
+    finishReason: 'stop',
+  })
+  if (webhook) emitWebhookEvent(webhook, messagePayload(final))
+  yield { object: 'message.usage', id: assistant.id, usage }
+  if (closing === 'message') yield { object: 'message', ...messagePayload(final) }
+  else yield chatEvent(chat)
+}
+
+// ---------------------------------------------------------------------------
 // Raw wire format (public /v2 contract)
 // ---------------------------------------------------------------------------
 
@@ -173,7 +300,7 @@ async function emitEvent(res, event) {
 async function writeRawStream(res, events) {
   res.writeHead(200, sseHeaders())
   try {
-    for (const event of events) await emitEvent(res, event)
+    for await (const event of events) await emitEvent(res, event)
     res.end()
   } catch (err) {
     failStream(res, err)
@@ -182,12 +309,21 @@ async function writeRawStream(res, events) {
 
 /** Streams `chat` + `chat.title` + parts deltas + usage + closing chat. */
 export function chatsCreateStream({ body }) {
+  if (isModelEnabled()) {
+    const ctx = modelCreateSetup(body)
+    return { stream: (res) => writeRawStream(res, modelStreamEvents({ ...ctx, prompt: body.message })) }
+  }
   const { events } = chatsCreateEvents(body)
   return { stream: (res) => writeRawStream(res, events) }
 }
 
 /** Streams opening message + parts deltas + usage + closing message. */
 export function messagesSendStream({ params, body }) {
+  if (isModelEnabled()) {
+    const ctx = modelSendSetup({ chatId: params.chatId, message: body.message })
+    if (ctx.notFound) return { status: 404, json: { message: 'chat_not_found' } }
+    return { stream: (res) => writeRawStream(res, modelStreamEvents({ ...ctx, prompt: body.message })) }
+  }
   const built = messagesSendEvents({ chatId: params.chatId, message: body.message })
   if (built.notFound) return { status: 404, json: { message: 'chat_not_found' } }
   return { stream: (res) => writeRawStream(res, built.events) }
@@ -235,7 +371,7 @@ async function writeEnvelopeStream(res, events) {
 }
 
 async function* pacedEvents(events) {
-  for (const event of events) {
+  for await (const event of events) {
     await sleep(CHUNK_DELAY_MS)
     yield event
   }
@@ -244,6 +380,10 @@ async function* pacedEvents(events) {
 /** Envelope `{status, event, chat, parts}` stream for `chats.createStream`. */
 export function chatsCreateStreamAI({ body }) {
   if (!body || typeof body.message !== 'string' || body.message === '') return emptyError()
+  if (isModelEnabled()) {
+    const ctx = modelCreateSetup(body)
+    return { stream: (res) => writeEnvelopeStream(res, modelStreamEvents({ ...ctx, prompt: body.message })) }
+  }
   const { events } = chatsCreateEvents(body)
   return { stream: (res) => writeEnvelopeStream(res, events) }
 }
@@ -251,6 +391,11 @@ export function chatsCreateStreamAI({ body }) {
 /** Envelope stream for `messages.sendStream`. */
 export function messagesSendStreamAI({ params, body }) {
   if (!body || typeof body.message !== 'string' || body.message === '') return emptyError()
+  if (isModelEnabled()) {
+    const ctx = modelSendSetup({ chatId: params.chatId, message: body.message })
+    if (ctx.notFound) return { status: 404, json: { message: 'chat_not_found' } }
+    return { stream: (res) => writeEnvelopeStream(res, modelStreamEvents({ ...ctx, prompt: body.message })) }
+  }
   const built = messagesSendEvents({ chatId: params.chatId, message: body.message })
   if (built.notFound) return { status: 404, json: { message: 'chat_not_found' } }
   return { stream: (res) => writeEnvelopeStream(res, built.events) }

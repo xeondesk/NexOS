@@ -221,7 +221,24 @@ install the compose file / README port mapping applies as written.
   `chats.list`), deploy auto-creates a project when the chat has none and its
   `url` resolves to the preview ingress (`NEXOS_PREVIEW_URL`, default
   `http://127.0.0.1:8082/<chatId>`). Every operation in openapi-v2.json is
-  now implemented (no 501s).
+  now implemented (no 501s). **Live model backend**: setting `NEXOS_API_MODEL_URL`
+  switches `chats.createStream`, `messages.sendStream` and their `/v2/ai/*`
+  envelope variants from the deterministic mock to an OpenAI-compatible
+  `/chat/completions` SSE endpoint (`NEXOS_API_MODEL_KEY` → `Authorization:
+  Bearer`, `NEXOS_API_MODEL` default `gpt-4o-mini`). `api/lib/model-client.mjs`
+  parses the SSE stream and yields `{type:'thinking'|'text'}` deltas
+  (`reasoning_content` and `content`), which `modelPartsSteps` folds into an
+  append-only parts progression (same `[[idx,'text',suffix],9,9]` fast-path as
+  the mock). The assistant message is `addAssistant`ed empty up front (fixed id
+  via `store.newId`) and finalized with the accumulated parts/content/usage by
+  `store.finalizeMessage` when the stream completes (`finishReason:'stop'`;
+  `'error'` + partial text, or `store.deleteMessage` rollback, on failure).
+  Conversation history for later turns is `store.getMessages(chatId)` excluding
+  the just-added user message (slice BEFORE adding the empty assistant).
+  Unset URL = mock unchanged; sync create/async ops and the resolve family stay
+  mock-backed by design. Covered by `tests/api-model-smoke.sh` (boots
+  `tests/fixtures/llm-stub.mjs`, asserts raw + envelope streaming, persistence,
+  resume replay, history in the stub's logged request, and error rollback).
 
 ## Verification flow
 
