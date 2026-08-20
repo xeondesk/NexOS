@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Test (npm test + VSIX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: System deps
+        # `ip` (remote-reachability checks) and `unzip` (from-zip tests) are
+        # not guaranteed on all runner images.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends iproute2 unzip
+      - name: Install dependencies
+        run: npm ci
+      - name: Run test suite
+        run: npm test
+      - name: Build VSIX
+        run: bash bridge/editor-extension/build-vsix.sh
+
+  docker:
+    name: Docker (build + runtime smoke)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t nexos .
+      - name: Runtime smoke
+        run: |
+          set -euo pipefail
+          cid="$(docker run -d nexos)"
+          cleanup() { docker rm -f "$cid" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          # Wait for the entrypoint to start every supervised service.
+          ready=0
+          for _ in $(seq 1 45); do
+            if docker logs "$cid" 2>&1 | grep -q "NexOS ready"; then ready=1; break; fi
+            sleep 2
+          done
+          docker logs "$cid" 2>&1
+          [ "$ready" -eq 1 ] || { echo "container never became ready" >&2; exit 1; }
+          # Exercise the control plane + portal + gateway + new ingress in-container.
+          docker exec "$cid" curl -fsS http://127.0.0.1:7682/health >/dev/null
+          docker exec "$cid" curl -fsS http://127.0.0.1:8080/health >/dev/null
+          docker exec "$cid" curl -fsS http://127.0.0.1:8081/health >/dev/null
+          # Ingress path route proxying to the web portal.
+          docker exec "$cid" curl -fsS http://127.0.0.1:8083/proxy/8080/health >/dev/null
+          # Clean shutdown: SIGTERM trap must exit 0 with no leaked listeners.
+          docker stop --time 30 "$cid" >/dev/null
+          code="$(docker inspect -f '{{.State.ExitCode}}' "$cid")"
+          [ "$code" = "0" ] || { echo "container exit code was $code (expected 0)" >&2; exit 1; }
+          trap - EXIT
+          docker rm "$cid" >/dev/null
+          echo "docker-smoke: PASS"
