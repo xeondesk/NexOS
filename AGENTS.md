@@ -14,7 +14,7 @@ is explicitly out of scope for migration.
 - `bin/entrypoint.sh` — container entrypoint (starts services, signal handling)
 - `config/nexos.conf` — `NEXOS_*` path/port/env defaults
 - `config/nexos.env.example` — callback identity template (never commit real `nexos.env`)
-- `lib/` — supervisor.sh, log-proxy.js, metrics.sh, register.mjs, config-loader.mjs
+- `lib/` — supervisor.sh, log-proxy.js, ingress.js, metrics.sh, register.mjs, config-loader.mjs
 - `services/` — editor.sh (code-server), terminal.sh (ttyd)
 - `bridge/bridge-api.js` — standalone control API for editor hosts
 - `web/` — api-server.js (portal API) + index.html (no-build dashboard)
@@ -24,7 +24,7 @@ is explicitly out of scope for migration.
 
 ## Commands
 
-- Tests: `npm test` (supervisor + log-proxy + metrics + bridge + editor-extension + vsix packaging + git-sign + web + api smoke tests)
+- Tests: `npm test` (supervisor + log-proxy + metrics + bridge + editor-extension + vsix packaging + git-sign + ingress + web + api smoke tests)
 - VSIX: `bash bridge/editor-extension/build-vsix.sh` (vendors `bridge-api.js`,
   strips the source-tree fallback require, emits `nexos-bridge-<ver>.vsix`)
 - CLI smoke: `bin/nexos status`, `bin/nexos exec "node -v"`
@@ -57,6 +57,15 @@ install the compose file / README port mapping applies as written.
 - **Test harness**: a bare `!` cannot be passed through `"$@"` in helper
   functions (e.g. `check "negation" ! kill ...`); use a separate `check_not`
   helper or `[ ! ... ]` test forms.
+- **Ingress routing**: `lib/ingress.js` serves `/proxy/<port>/<path>` (v0
+  `VSCODE_PROXY_URI` parity, loopback-only targets = SSRF-safe) and host routing
+  via `NEXOS_INGRESS_ROUTES` (`*.` wildcard; numeric subdomains `<port>.<base>`
+  → the loopback port). IP-literal hosts (`127.0.0.1`) must NEVER take the
+  numeric-subdomain path (`hostnameOf` + `^\d+(\.\d+)+$` guard) or a bare
+  `Host: 127.0.0.1` request would "route" to port 127. WebSocket `upgrade`
+  responses must forward the upstream 101 verbatim (incl. `sec-websocket-accept`
+  / `Upgrade` / `Connection`) — stripping hop-by-hop headers from the 101 breaks
+  the ws client with "Unexpected server response: 101".
 - **code-server install**: the npm package fails under npm 10/11 (nested vscode
   node_modules walker) — install from the GitHub release tarball
   (`code-server-<ver>-linux-<arch>.tar.gz`). Requires node >= 22 in the image.

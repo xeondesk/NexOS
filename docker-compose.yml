@@ -7,6 +7,7 @@
 #   curl  http://localhost:7682/health   (control plane)
 #   curl  http://localhost:8081/health   (v2 API gateway)
 #   open  http://localhost:8082/         (preview ingress, chats.getPreview)
+#   open  http://localhost:8083/proxy/4444/   (agent-browser ingress)
 
 services:
   nexos:
@@ -23,6 +24,7 @@ services:
       - "8080:8080"   # web portal dashboard
       - "8081:8081"   # v2 API gateway (SDK baseUrl: http://host:8081/v2)
       - "8082:8082"   # preview ingress (chats.getPreview URLs)
+      - "8083:8083"   # agent-browser ingress (/proxy/<port>/ + <sub>.nexos.build)
     volumes:
       - ./workspace:/workspace            # your code lives here
       - nexos-state:/opt/nexos/state      # logs, pidfiles, editor config
@@ -36,6 +38,7 @@ services:
       - NEXOS_WEB_PORT=8080
       - NEXOS_API_PORT=8081
       - NEXOS_PREVIEW_PORT=8082
+      - NEXOS_INGRESS_PORT=8083
       # Auth for the web portal. Loopback is always trusted; set a token to
       # gate non-loopback dashboard requests (login screen / bearer header):
       # - NEXOS_WEB_TOKEN=changeme

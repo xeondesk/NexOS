@@ -137,3 +137,13 @@ host bootstrap.
     events `chat.created/updated/deleted` + `message.finished`, chat-scoped
     hooks, retries, `webhook-deliveries.jsonl` log); `settings.preview-hosts`
     GET/PUT. Covered by `tests/api-meta-smoke.sh` + `tests/api-preview-smoke.sh`.
+10. Agent-browser ingress — `lib/ingress.js` (supervised as the `ingress`
+    service) closes gap A2 (proxied ingress): a dependency-free single-port
+    reverse proxy serving `/proxy/<port>/<path>` → `127.0.0.1:<port>` (v0
+    `VSCODE_PROXY_URI` parity, loopback-only = SSRF-safe) and `<sub>.nexos.build`
+    host routing via `NEXOS_INGRESS_ROUTES` (defaults mirror the
+    `NEXOS_ALLOWED_DEV_HOSTS` framework hooks; numeric subdomains forward to the
+    loopback port). Header hygiene + `Host` rewrite + `X-Forwarded-For`, streamed
+    bodies, WebSocket `upgrade` passthrough for `next dev` HMR/server actions.
+    Loopback trusted; `NEXOS_INGRESS_TOKEN` gates remote clients. Covered by
+    `tests/ingress-smoke.sh` (18 checks).

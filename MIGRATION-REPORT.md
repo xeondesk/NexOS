@@ -226,7 +226,8 @@ down cleanly with no leaked processes on the host.
 1. **PID-1 control channel** (`sandbox-init` + auth socket) — not replicated;
    host-infrastructure.
 2. **Proxied ingress** (`VSCODE_PROXY_URI`, kernel ports `23456`/`30001–30010`)
-   — no in-NexOS reverse proxy; documented as platform-owned.
+   — `VSCODE_PROXY_URI` parity now ships in-NexOS as `lib/ingress.js` (see §8);
+   the kernel-level infra ports stay platform-owned.
 3. **Live editor coupling** — originally inside the extension host; now
    reproduced by the bundled `bridge/editor-extension/` (either/or with the
    standalone bridge).
@@ -241,8 +242,13 @@ down cleanly with no leaked processes on the host.
 
 ## 8. Future work
 
-- Self-hosted **agent-browser ingress**: a NexOS-owned reverse proxy / tunnel
-  replacing `VSCODE_PROXY_URI` for the `*.nexos.build` hostnames.
+- Self-hosted **agent-browser ingress** — **done**: `lib/ingress.js` is a
+  NexOS-owned reverse proxy replacing `VSCODE_PROXY_URI` for the `*.nexos.build`
+  hostnames. One port (`NEXOS_INGRESS_PORT`, 8083) serves the v0 path scheme
+  `/proxy/<port>/<path>` → `127.0.0.1:<port>` plus host routing (`*.nexos.build`
+  → `NEXOS_INGRESS_ROUTES`, numeric subdomains → loopback ports), with WebSocket
+  upgrade passthrough, header hygiene, and an optional `NEXOS_INGRESS_TOKEN`
+  gate for remote clients. Covered by `tests/ingress-smoke.sh`.
 - **Auth for the control plane** — **done**: `NEXOS_LOG_PROXY_TOKEN` /
   `NEXOS_BRIDGE_TOKEN` enforce bearer-token auth for remote clients (loopback
   stays trusted, remote clients are forced non-admin without a token).

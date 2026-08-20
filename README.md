@@ -17,6 +17,7 @@ nexos/
 ├── lib/
 │   ├── supervisor.sh     per-service process supervisor (pm2 replacement)
 │   ├── log-proxy.js      WS log streaming + local exec control plane
+│   ├── ingress.js        single-port agent-browser reverse proxy (/proxy/<port>/ + host routing)
 │   ├── metrics.sh        resource metrics daemon (60s → callback)
 │   ├── register.mjs      Node module-hook registration (framework runtime)
 │   └── config-loader.mjs next.config.* interception + NexOS overrides
@@ -56,6 +57,7 @@ nexos start metrics        # metrics daemon
 nexos start bridge         # control API for editor hosts (NEXOS_BRIDGE_PORT, 9876)
 nexos start web            # full-platform web portal on NEXOS_WEB_PORT (8080)
 nexos start api            # v0-compatible API gateway on NEXOS_API_PORT (8081)
+nexos start ingress        # agent-browser reverse proxy on NEXOS_INGRESS_PORT (8083)
 nexos sign-keygen          # git-sign keypair (state/sign/sign-key.{pem,pub})
 nexos start git-sign       # self-hosted SSH signing service (NEXOS_GIT_SIGN_PORT, 9877)
 nexos status
@@ -96,6 +98,35 @@ Loopback requests stay token-free and remain trusted. Remote clients without a
 valid token get `401`, and (for the log-proxy) are treated as non-admin — they
 cannot see `adminOnly` log lines, which also means a token-authed client is
 required to read those lines remotely.
+
+## Agent-browser ingress
+
+`nexos start ingress` runs a single-port reverse proxy
+(`lib/ingress.js`, dependency-free `node:http`) that replaces the
+platform-owned `VSCODE_PROXY_URI=/proxy/{{port}}/` + wildcard-hostname ingress.
+It serves two routing schemes:
+
+| Scheme | Example | Forwards to |
+|---|---|---|
+| Path (v0 parity) | `http://host:8083/proxy/4444/` | `http://127.0.0.1:4444/` |
+| Host (named) | `http://app.nexos.build/` | `NEXOS_INGRESS_ROUTES` target for `*.nexos.build` |
+| Host (numeric subdomain) | `http://3000.nexos.build/` | `http://127.0.0.1:3000/` |
+
+Path targets are loopback ports 1–65535 only (SSRF-safe); unknown hosts and
+non-numeric/out-of-range ports get 404/400. `NEXOS_INGRESS_ROUTES` is a JSON
+`host → target` map (`*.` matches any subdomain) whose defaults mirror the
+`NEXOS_ALLOWED_DEV_HOSTS` framework hooks — a hostname the framework accepts is
+one the ingress serves. This is what lets the AI agent's browser reach `next
+dev` on the workspace (HMR websockets + server actions): point `*.nexos.build`
+at the dev server, then open the dev-server URL through the `*.nexos.build`
+hostname. WebSocket `upgrade` is proxied through (no buffering), bodies stream,
+hop-by-hop/proxy headers are stripped, `Host` is rewritten to the upstream, and
+`X-Forwarded-For` is set.
+
+Loopback is always trusted; set `NEXOS_INGRESS_TOKEN` to require a bearer token
+from remote clients (`Authorization: Bearer <token>`, or `?token=` for
+WebSocket clients that cannot set headers). Bound to `127.0.0.1` by default;
+`NEXOS_ALLOW_REMOTE=true` binds `0.0.0.0`.
 
 ## Web portal
 
@@ -265,10 +296,11 @@ docker run --rm -p 4444:4444 -p 7681:7681 -p 7682:7682 \
   logs, pidfiles, and editor config.
 - Ports: `4444` editor, `7681` terminal, `7682` log-proxy, `9876` bridge API
   (localhost-only by default), `8080` web portal (`NEXOS_WEB_PORT`), `8081` v2
-  API gateway (`NEXOS_API_PORT`).
+  API gateway (`NEXOS_API_PORT`), `8082` preview ingress, `8083` agent-browser
+  ingress (`NEXOS_INGRESS_PORT`).
 - Service gating via `NEXOS_ENABLE_*` (`log-proxy`, `editor`, `terminal`,
-  `metrics`, `bridge`, `web`, `api`). Editor/terminal auto-skip if the binary is
-  absent; metrics auto-skip until a callback URL is configured
+  `metrics`, `bridge`, `web`, `api`, `ingress`). Editor/terminal auto-skip if the
+  binary is absent; metrics auto-skip until a callback URL is configured
   (`NEXOS_CALLBACK_URL` or a mounted `config/nexos.env`).
 - The entrypoint (`bin/entrypoint.sh`) starts all services, traps
   `SIGTERM`/`SIGINT`, and shuts every supervised service down cleanly.
